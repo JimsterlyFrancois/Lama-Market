@@ -1,0 +1,98 @@
+{
+  "name": "Order",
+  "type": "object",
+  "properties": {
+    "customer_name": {
+      "type": "string",
+      "description": "Nom de l'acheteur"
+    },
+    "customer_email": {
+      "type": "string",
+      "description": "E-mail de l'acheteur (facultatif)"
+    },
+    "items": {
+      "type": "array",
+      "description": "Lignes de la commande",
+      "items": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number"
+          },
+          "quantity": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "total": {
+      "type": "number",
+      "description": "Total de la commande"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "validated",
+        "completed",
+        "cancelled"
+      ],
+      "enumColors": [
+        "yellow",
+        "blue",
+        "green",
+        "gray"
+      ],
+      "default": "pending",
+      "description": "Statut de la commande"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "online",
+        "manual"
+      ],
+      "description": "Commande en ligne ou ajoutée par l'équipe"
+    },
+    "validated_by_code": {
+      "type": "string",
+      "description": "ID à 6 chiffres du vendeur"
+    },
+    "validated_by_emoji": {
+      "type": "string",
+      "description": "Émoji du vendeur"
+    }
+  },
+  "required": [
+    "customer_name",
+    "total"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
