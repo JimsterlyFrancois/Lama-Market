@@ -1,0 +1,56 @@
+{
+  "name": "StaffMember",
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string",
+      "description": "E-mail du membre de l'équipe (minuscules)"
+    },
+    "staff_type": {
+      "type": "string",
+      "enum": [
+        "adm",
+        "vendeur"
+      ],
+      "enumColors": [
+        "purple",
+        "green"
+      ],
+      "description": "Administrateur ou vendeur"
+    },
+    "seller_code": {
+      "type": "string",
+      "description": "Identifiant à 6 chiffres"
+    },
+    "emoji": {
+      "type": "string",
+      "description": "Émoji d'identification"
+    }
+  },
+  "required": [
+    "email",
+    "staff_type"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
