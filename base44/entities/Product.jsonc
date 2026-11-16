@@ -1,0 +1,98 @@
+{
+  "name": "Product",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Nom commercial du produit"
+    },
+    "description": {
+      "type": "string",
+      "description": "Courte description commerciale"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "epicerie",
+        "maison",
+        "beaute",
+        "electronique",
+        "mode",
+        "bons-plans"
+      ],
+      "enumColors": [
+        "green",
+        "yellow",
+        "pink",
+        "blue",
+        "purple",
+        "red"
+      ],
+      "description": "Catégorie du catalogue"
+    },
+    "price": {
+      "type": "number",
+      "description": "Prix de vente"
+    },
+    "old_price": {
+      "type": "number",
+      "description": "Prix barré avant promotion (facultatif)"
+    },
+    "discount_ends_at": {
+      "type": "string",
+      "description": "Fin de l'offre de réduction (date ISO, facultatif)"
+    },
+    "stock": {
+      "type": "number",
+      "description": "Quantité disponible en stock"
+    },
+    "badge": {
+      "type": "string",
+      "description": "Badge affiché sur la carte (Promo, Populaire, Nouveau…)"
+    },
+    "rating": {
+      "type": "number",
+      "description": "Note moyenne sur 5"
+    },
+    "reviews": {
+      "type": "number",
+      "description": "Nombre d'avis clients"
+    },
+    "image_url": {
+      "type": "string",
+      "description": "Visuel du produit"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Produit visible dans la boutique"
+    },
+    "sort_order": {
+      "type": "number",
+      "description": "Ordre d'affichage dans les grilles"
+    }
+  },
+  "required": [
+    "name",
+    "category",
+    "price"
+  ],
+  "rls": {
+    "read": {},
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
