@@ -1,0 +1,63 @@
+{
+  "name": "StaffNote",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "message",
+        "alert"
+      ],
+      "enumColors": [
+        "blue",
+        "red"
+      ],
+      "description": "Message des administrateurs ou alerte Secours"
+    },
+    "content": {
+      "type": "string",
+      "description": "Texte"
+    },
+    "author_code": {
+      "type": "string",
+      "description": "ID de l'auteur"
+    },
+    "author_emoji": {
+      "type": "string",
+      "description": "Émoji de l'auteur"
+    },
+    "seen_by": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Utilisateurs ayant cliqué sur Voir"
+    }
+  },
+  "required": [
+    "kind",
+    "content"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}
