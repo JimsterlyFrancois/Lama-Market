@@ -87,3 +87,129 @@ export function parseWixMediaUrl(src) {
      return null
 
    }
+
+
+
+   const pathPrefix = WIX_MEDIA_HOSTS[url.hostname]
+
+   if (!pathPrefix) return null
+
+
+
+   const transformed = url.pathname.match(/^(.*)\/v1\/(?:fill|fit)\/[^/]+\/[^/]+$/i)
+
+   const basePath = transformed ? transformed[1] : url.pathname
+
+   const filename = basePath.split("/").pop()
+
+   if (
+
+     !basePath.startsWith(pathPrefix) ||
+
+     !filename ||
+
+     !/\.[a-z0-9]+$/i.test(filename) ||
+
+     /\.svg$/i.test(filename)
+
+   ) {
+
+     return null
+
+   }
+
+
+
+   return { baseUrl: `${url.origin}${basePath}`, filename }
+
+ } catch {
+
+   return null
+
+ }
+
+}
+
+
+
+const clampDim = (n) => Math.min(Math.max(Math.round(n), 1), MAX_DIMENSION)
+
+const clamp01 = (n) => Math.min(1, Math.max(0, n))
+
+
+
+export function buildTransformUrl(
+
+ { baseUrl, filename },
+
+ { width, height, crop, focalPoint, quality }
+
+) {
+
+ const params = [`w\_${clampDim(width)}`, `h\_${clampDim(height || width)}`]
+
+ if (crop) {
+
+   params.push(
+
+     focalPoint
+
+       ? `fp\_${clamp01(focalPoint.x).toFixed(2)}\_${clamp01(focalPoint.y).toFixed(2)}`
+
+       : "al_c"
+
+   )
+
+ }
+
+ // Preserve GIF delivery; negotiate AVIF/WebP for other images via Accept.
+
+ const encoding = /\.gif$/i.test(filename) ? "enc_webp" : "enc_auto"
+
+ params.push(`q\_${quality}`, "usm_0.66_1.00_0.01", encoding, "quality_auto")
+
+ return `${baseUrl}/v1/${crop ? "fill" : "fit"}/${params.join(",")}/${filename}`
+
+}
+
+
+
+export function buildSrcSet(parsed, options) {
+
+ return DEVICE_PIXEL_RATIOS.map(
+
+   (dpr) =>
+
+     `${buildTransformUrl(parsed, {
+
+       ...options,
+
+       width: options.width * dpr,
+
+       height: options.height ? options.height * dpr : undefined,
+
+     })} ${dpr}x`
+
+ ).join(", ")
+
+}
+
+
+
+export function getOriginalImageUrl(src, parsed) {
+
+ return parsed?.baseUrl || src
+
+}
+
+
+
+export function nextImageLoadMode(mode) {
+
+ return mode === IMAGE_LOAD_MODE.OPTIMIZED
+
+   ? IMAGE_LOAD_MODE.ORIGINAL
+
+   : IMAGE_LOAD_MODE.FALLBACK
+
+}
