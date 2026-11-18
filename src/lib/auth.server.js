@@ -30,8 +30,10 @@ export async function requireUser(token) {
 export async function requireRole(token, roles) {
   const user = await requireUser(token);
   const db = getDb();
-  if (user.email && process.env.LAMA_MARKET_ADMIN_EMAIL &&
-      user.email.toLowerCase() === process.env.LAMA_MARKET_ADMIN_EMAIL.toLowerCase()) {
+  const identity = await db.query('select email from neon_auth."user" where id=$1', [user.id]);
+  const verifiedEmail = identity.rows[0]?.email;
+  if (verifiedEmail && process.env.LAMA_MARKET_ADMIN_EMAIL &&
+      verifiedEmail.toLowerCase() === process.env.LAMA_MARKET_ADMIN_EMAIL.toLowerCase()) {
     await db.query(
       "insert into public.user_roles(user_id,role,is_active) values($1,'admin',true) on conflict(user_id,role) do update set is_active=true",
       [user.id],
