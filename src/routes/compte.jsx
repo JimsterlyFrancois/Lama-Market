@@ -1,0 +1,12 @@
+import { useEffect,useState } from "react";
+import { createFileRoute,Link } from "@tanstack/react-router";
+import { authClient,getAccessToken } from "../lib/auth-client";
+import { getMyProfile,updateMyProfile,getMyNotifications } from "../lib/commerce";
+export const Route=createFileRoute("/compte")({component:ProfilePage});
+function ProfilePage(){
+ const [profile,setProfile]=useState({phone:"",preferred_name:""});const [email,setEmail]=useState("");const [notice,setNotice]=useState("");const [notifications,setNotifications]=useState([]);
+ useEffect(()=>{(async()=>{try{const token=await getAccessToken();const [p,n]=await Promise.all([getMyProfile({data:{token}}),getMyNotifications({data:{token}})]);setProfile(p.profile||profile);setEmail(p.user.email||"");setNotifications(n);}catch(e){setNotice(e.message);}})();},[]);
+ async function save(e){e.preventDefault();try{const token=await getAccessToken();await updateMyProfile({data:{token,phone:profile.phone,preferredName:profile.preferred_name}});setNotice("Profil enregistré.");}catch(e){setNotice(e.message);}}
+ async function logout(){await authClient?.signOut();window.location.href="/";}
+ return <main className="commerce-page"><header className="commerce-header"><Link to="/">← Accueil</Link><strong>Mon compte</strong><button className="text-button" onClick={logout}>Déconnexion</button></header><div className="commerce-container"><div className="commerce-title"><span>ESPACE CLIENT</span><h1>Mon profil</h1><p>Gérez vos coordonnées et retrouvez vos informations.</p></div><div className="profile-grid"><section className="commerce-panel"><h2>Mes coordonnées</h2><form className="account-form" onSubmit={save}><label>Adresse e-mail<input value={email} disabled/></label><label>Nom affiché<input value={profile.preferred_name||""} onChange={e=>setProfile({...profile,preferred_name:e.target.value})}/></label><label>Téléphone<input value={profile.phone||""} onChange={e=>setProfile({...profile,phone:e.target.value})}/></label><button className="account-submit">Enregistrer</button>{notice&&<p className="form-message">{notice}</p>}</form></section><section className="commerce-panel"><h2>Accès rapides</h2><p><Link to="/commandes">Mes commandes →</Link></p><p><Link to="/panier">Mon panier →</Link></p><h3>Notifications récentes</h3>{notifications.slice(0,6).map(n=><div className="notification-row" key={n.id}><strong>{n.title}</strong><p>{n.message}</p></div>)}</section></div></div></main>;
+}

@@ -4,7 +4,8 @@ import {
   Search, ShoppingBasket, Leaf, Truck, ShieldCheck, Clock3,
   ChevronRight, SlidersHorizontal, PackageSearch, RefreshCw,
 } from "lucide-react";
-import { getSupabaseClient, isSupabaseConfigured } from "../lib/supabase";
+import { getCatalog, addCartItem } from "../lib/commerce";
+import { authClient, getAccessToken } from "../lib/auth-client";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -43,35 +44,9 @@ function HomePage() {
     setLoading(true);
     setError("");
 
-    if (!isSupabaseConfigured) {
-      setProducts([]);
-      setLoading(false);
-      setError("Le catalogue n'est pas encore connecté. La configuration de Supabase est nécessaire pour afficher les produits enregistrés.");
-      return;
-    }
-
     try {
-      const client = getSupabaseClient();
-      const allRows = [];
-      const pageSize = 500;
-      let start = 0;
-
-      while (true) {
-        const { data, error: queryError } = await client
-          .from("products")
-          .select("id,name,description,category,price,old_price,stock,badge,rating,reviews,image_url,is_active,sort_order")
-          .eq("is_active", true)
-          .order("sort_order", { ascending: true, nullsFirst: false })
-          .range(start, start + pageSize - 1);
-
-        if (queryError) throw queryError;
-        const rows = data ?? [];
-        allRows.push(...rows);
-        if (rows.length < pageSize) break;
-        start += pageSize;
-      }
-
-      setProducts(allRows);
+      const result = await getCatalog();
+      setProducts(result.products ?? []);
     } catch (loadError) {
       setError(loadError?.message || "Impossible de charger le catalogue pour le moment.");
       setProducts([]);
@@ -118,7 +93,7 @@ function HomePage() {
           <a href="#categories">Catégories</a>
           <a href="#avantages">Nos engagements</a>
         </nav>
-        <a className="header-cta" href="#catalogue"><ShoppingBasket size={17} /> Voir les produits</a>
+        <div className="header-actions"><a className="header-account" href="/auth">Mon compte</a><a className="header-cta" href="/panier"><ShoppingBasket size={17} /> Mon panier</a></div>
       </header>
 
       <section className="hero">
@@ -196,7 +171,7 @@ function HomePage() {
           </div>
         ) : (
           <div className="product-grid">
-            {visibleProducts.map((product) => <ProductCard key={product.id} product={product} />)}
+            {visibleProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={async () => { try { const session = await authClient?.getSession(); if (!session?.data?.user) { window.location.href = "/auth"; return; } const token = await getAccessToken(); await addCartItem({ data: { token, productId: product.id, quantity: 1 } }); window.location.href = "/panier"; } catch (e) { window.alert(e.message || "Impossible d’ajouter ce produit."); } }} />)}
           </div>
         )}
       </section>
@@ -210,7 +185,7 @@ function HomePage() {
   );
 }
 
-function ProductCard({ product }) {
+function ProductCard({ product, onAdd }) {
   const categoryName = CATEGORIES.find((item) => item.value === product.category)?.label || product.category;
   const available = Number(product.stock ?? 0) > 0;
   return (
@@ -228,6 +203,7 @@ function ProductCard({ product }) {
           <div><strong className="product-price">{formatPrice(product.price)}</strong>{product.old_price && <del>{formatPrice(product.old_price)}</del>}</div>
           <span className={available ? "stock-status" : "stock-status unavailable"}>{available ? "Disponible" : "Indisponible"}</span>
         </div>
+        <button className="add-cart-button" type="button" disabled={!available} onClick={onAdd}>Ajouter au panier</button>
       </div>
     </article>
   );
