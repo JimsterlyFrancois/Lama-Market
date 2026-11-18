@@ -1,54 +1,25 @@
-# Lama Market — état de la migration
+# Audit de migration — Lama Market
 
-## État vérifié du dépôt
+## Résultat du retrait de Base44
 
-Dépôt : `JimsterlyFrancois/Lama-Market`  
-Branche de travail : `migration/lama-market-foundation`  
-Branche principale préservée : `main`
+La branche de migration retire les dépendances d'exécution et les points d'entrée propres à Base44 :
 
-Le dépôt principal contient actuellement 82 entrées suivies dans Git. Il contient des composants React, des écrans d'authentification, des écrans boutique et équipe, ainsi que les définitions d'entités Base44. Il ne contient pas encore le socle exécutable complet attendu pour une application TanStack Start.
+- suppression du client `@base44/sdk` et du fichier `src/api/base44Client.js` ;
+- suppression du flux OAuth/MCP de consentement propre à Base44 ;
+- remplacement des appels Base44 pour l'inscription et la récupération de mot de passe par Supabase Auth ;
+- suppression de la configuration `base44/config.jsonc` ;
+- conservation des six anciennes définitions d'entités dans `docs/data-model/`, uniquement comme documentation JSONC.
 
-## Éléments absents de la branche principale
+Le catalogue actif interroge Supabase via `src/lib/supabase.js`. La variable publique `VITE_SUPABASE_URL` et la clé publique/anon sont requises ; aucune clé de service ne doit être exposée au navigateur.
 
-Les chemins suivants n'ont pas été trouvés dans l'arbre Git de `main` :
+## Images et identité de marque
 
-- `package.json` et fichier de verrouillage npm/pnpm/yarn ;
-- `vite.config.js` ;
-- `wrangler.jsonc` ;
-- `src/server.js` ;
-- `src/start.js` ;
-- `src/router.jsx` ;
-- `src/routes/__root.jsx` et les routes de pages ;
-- `src/lib/auth-middleware.js` ;
-- `src/lib/AuthContext.jsx` ;
-- `src/lib/app-params.js`, pourtant importé par `src/api/base44Client.js` ;
-- les fonctions serveur et les points d'accès nécessaires aux opérations de la boutique.
+La couverture du site est stockée dans `public/images/lama-market-cover.webp`. Le logo lama est stocké séparément au format SVG dans `public/images/lama-market-logo.svg`, et utilisé dans l'en-tête, les services et le pied de page.
 
-L'absence de ces fichiers empêche de confirmer que le dépôt peut être installé, construit et exécuté comme un site autonome. La présence des composants visuels ne prouve pas que les actions, l'authentification et les données sont reliées.
+## Périmètre fonctionnel à distinguer
 
-## Éléments déjà présents
+Le retrait de Base44 ne signifie pas que toutes les fonctions de commerce sont achevées. La page d'accueil active affiche un catalogue Supabase avec recherche, filtres et tri. Les parcours Auth ont été adaptés à Supabase mais doivent encore être reliés aux routes du routeur. Les commandes, paiements, administration, messages et stocks nécessitent des fonctions backend supplémentaires, des politiques RLS et des tests dédiés.
 
-- composants boutique, panier, catalogue et compte ;
-- composants d'administration et d'équipe ;
-- composants de connexion, inscription et récupération de mot de passe ;
-- définitions Base44 pour Product, Order, StaffMember, StaffNote, User et NewsletterSubscriber.
+## Vérifications
 
-## Modifications isolées sur la branche de migration
-
-- `.gitignore` : ignore les dépendances, fichiers générés et fichiers d'environnement locaux ;
-- `src/lib/server-fns.js` : ajoute des gardes serveur élémentaires pour l'authentification et les rôles.
-
-Ces gardes ne sont pas encore reliées aux routes ni aux fonctions serveur. Elles ne constituent donc pas, à elles seules, une protection complète.
-
-## Points à résoudre avant un déploiement
-
-1. Récupérer ou reconstituer les fichiers d'architecture originaux de l'export Base44.
-2. Déterminer les versions exactes des dépendances et les scripts de build.
-3. Reconnecter les entités et opérations de données à un backend réel.
-4. Protéger chaque opération serveur par authentification, contrôle de rôle et validation des entrées.
-5. Vérifier que les identifiants et secrets ne sont jamais présents dans le code client ou dans Git.
-6. Exécuter installation, lint, build et tests fonctionnels avant tout déploiement.
-
-## Limite de cet audit
-
-Cet état décrit uniquement les fichiers actuellement visibles dans le dépôt Git. L'archive complète Base44 n'a pas été disponible pour une comparaison fichier par fichier. Les éléments indiqués comme absents sont absents du dépôt vérifié, mais peuvent exister dans l'export original non récupéré.
+Une revue statique des appels Base44 a identifié les anciens points d'entrée dans le client API, l'inscription, la réinitialisation du mot de passe et la page de consentement OAuth. Ces références d'exécution sont supprimées ou remplacées dans cette branche. Le build et le parcours réel Supabase doivent être exécutés avec les variables de projet avant fusion et déploiement.

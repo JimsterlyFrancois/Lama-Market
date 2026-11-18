@@ -1,57 +1,56 @@
-import { ArrowLeft, Mail } from "lucide-react";
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { ArrowLeft, Mail } from "lucide-react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
-import { AuthLink, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { safeReturnTo } from "@/lib/authReturnTo";
+import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 
-// The /forgot-password page. Always ends in the generic "if an account exists"
-// message: the API does not reveal whether the email is registered, and neither should the UI.
 export function ForgotPasswordPage() {
-  const returnTo = safeReturnTo();
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
 
-  async function submit(e) {
-    e.preventDefault();
+  async function submit(event) {
+    event.preventDefault();
+    setError("");
+    if (!isSupabaseConfigured) {
+      setError("Le service de réinitialisation n'est pas encore configuré.");
+      return;
+    }
     setBusy(true);
     try {
-      await base44.auth.resetPasswordRequest(email);
+      const { error: resetError } = await getSupabaseClient().auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (resetError) throw resetError;
+      setSent(true);
     } catch {
-      // Same outcome either way.
+      setError("La demande n'a pas pu être traitée. Vérifiez l'adresse et réessayez.");
     } finally {
       setBusy(false);
-      setSent(true);
     }
   }
 
   return (
-    <AuthLayout icon={Mail} title="Reset password" subtitle="We'll send you a link to reset it">
+    <AuthLayout icon={Mail} title="Mot de passe oublié" subtitle="Recevez un lien de réinitialisation par e-mail">
       {sent ? (
-        <p className="text-center text-sm text-foreground">If an account exists with that email, you'll receive a password reset link shortly.</p>
+        <p className="text-center text-sm text-foreground">Si un compte est associé à cette adresse, vous recevrez un lien pour choisir un nouveau mot de passe.</p>
       ) : (
-        <form onSubmit={submit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="forgot-email">Email address</Label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-              <Input id="forgot-email" type="email" autoComplete="email" autoFocus placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12 pl-10" required />
+        <>
+          {error && <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
+          <form onSubmit={submit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="forgot-email">Adresse e-mail</Label>
+              <Input id="forgot-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-12" required />
             </div>
-          </div>
-          <SubmitButton busy={busy} busyLabel="Sending...">
-            Send reset link
-          </SubmitButton>
-        </form>
+            <button type="submit" disabled={busy} className="h-12 w-full rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-60">
+              {busy ? "Envoi…" : "Envoyer le lien"}
+            </button>
+          </form>
+        </>
       )}
-      <p className="mt-6 text-center text-sm text-muted-foreground">
-        <AuthLink to="/login" returnTo={returnTo}>
-          <ArrowLeft className="mr-1 inline h-3 w-3" aria-hidden="true" />
-          Back to log in
-        </AuthLink>
-      </p>
+      <p className="mt-6 text-center text-sm"><a href="/login" className="font-medium text-primary hover:underline"><ArrowLeft className="mr-1 inline h-3 w-3" />Retour à la connexion</a></p>
     </AuthLayout>
   );
 }
