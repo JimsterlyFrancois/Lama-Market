@@ -55,7 +55,7 @@ export const addCartItem = createServerFn({ method: "POST" }).inputValidator((da
     await client.query("begin");
     const product = await client.query("select id,stock from public.products where id=$1 and is_active=true and deleted_at is null for update", [data.productId]);
     if (!product.rowCount) fail("Ce produit n'est plus disponible.");
-    const cart = await client.query("insert into public.carts(user_id) values($1) on conflict(user_id) do update set updated_at=now() returning id", [user.id]);
+    const cart = await client.query("insert into public.carts(user_id) values($1) on conflict(user_id) do update set status='active',updated_at=now() returning id", [user.id]);
     const item = await client.query("insert into public.cart_items(cart_id,product_id,quantity) values($1,$2,$3) on conflict(cart_id,product_id) do update set quantity=public.cart_items.quantity+excluded.quantity,updated_at=now() returning quantity", [cart.rows[0].id, data.productId, quantity]);
     if (item.rows[0].quantity > product.rows[0].stock) fail("La quantité demandée dépasse le stock disponible.");
     await client.query("commit");
@@ -296,8 +296,9 @@ export const adminUpdateOrderStatus = createServerFn({ method: "POST" }).inputVa
   const client = await db.connect();
   try {
     await client.query("begin");
-    const order = await client.query("select id,customer_id,status from public.orders where id=$1 for update", [data.orderId]);
+    const order = await client.query("select id,customer_id,status,delivery_status,payment_status from public.orders where id=$1 for update", [data.orderId]);
     if (!order.rowCount) fail("Commande introuvable.");
+    if (data.status === "completed" && (order.rows[0].delivery_status !== "delivered" || !["paid","cash_collected"].includes(order.rows[0].payment_status))) fail("Une commande ne peut être terminée qu'après livraison et règlement confirmé.");
     if (data.status === "cancelled") {
       const reservations = await client.query("select product_id,quantity from public.stock_reservations where order_item_id in(select id from public.order_items where order_id=$1) and status='reserved' for update", [data.orderId]);
       for (const reservation of reservations.rows) {
