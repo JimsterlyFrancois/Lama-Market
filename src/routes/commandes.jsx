@@ -1,7 +1,7 @@
 import { useEffect,useState } from "react";
 import { createFileRoute,Link } from "@tanstack/react-router";
 import { getAccessToken } from "../lib/auth-client";
-import { getMyOrders } from "../lib/commerce.server";
+import { getMyOrders } from "../lib/commerce";
 export const Route=createFileRoute("/commandes")({component:OrdersPage});
 const money=new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
 function OrdersPage(){const [orders,setOrders]=useState([]);const [notice,setNotice]=useState("Chargement…");
