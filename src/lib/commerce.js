@@ -161,13 +161,14 @@ export const getMyOrders = createServerFn({ method: "GET" }).inputValidator((dat
 export const getAdminDashboard = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
   const db = await getDb();
-  const [stats, orders, lowStock, couriers] = await Promise.all([
+  const [stats, orders, lowStock, couriers, products] = await Promise.all([
     db.query("select count(*)::int total_orders,count(*) filter(where status in ('pending','confirmed','preparing','ready_for_delivery'))::int active_orders,coalesce(sum(total) filter(where payment_status in ('paid','cash_collected')),0)::numeric(12,2) revenue from public.orders"),
     db.query("select id,order_number,status,payment_status,delivery_status,total,created_at from public.orders order by created_at desc limit 12"),
     db.query("select id,name,stock,low_stock_threshold from public.products where is_active=true and stock<=low_stock_threshold order by stock asc limit 20"),
     db.query("select up.user_id,up.display_name,up.phone,up.employment_type,up.is_active from public.courier_profiles up order by up.display_name"),
+    db.query("select id,name,category,price,stock,is_active,image_url,sku,low_stock_threshold from public.products where deleted_at is null order by created_at desc limit 100"),
   ]);
-  return { stats: stats.rows[0], orders: orders.rows, lowStock: lowStock.rows, couriers: couriers.rows };
+  return { stats: stats.rows[0], orders: orders.rows, lowStock: lowStock.rows, couriers: couriers.rows, products: products.rows };
 });
 
 export const adminCreateProduct = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
@@ -332,4 +333,29 @@ export const getProductImageUploadUrl = createServerFn({ method: "POST" }).input
   await requireRole(data.token, ["admin"]);
   const storage = await import("./storage.server");
   return storage.createProductUpload({ contentType: data.contentType, size: Number(data.size) });
+});
+
+
+export const adminUpdateProduct = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+  await requireRole(data.token, ["admin"]);
+  const name=clean(data.name,180), category=clean(data.category,80), price=Number(data.price);
+  if(!name||!category||!Number.isFinite(price)||price<0) fail("Nom, catégorie et prix valides requis.");
+  const db=getDb();
+  const result=await db.query("update public.products set name=$2,description=$3,category=$4,price=$5,old_price=$6,image_url=$7,is_active=$8,low_stock_threshold=$9,updated_at=now() where id=$1 and deleted_at is null returning id",[data.productId,name,clean(data.description,2000)||null,category,price,data.oldPrice?Number(data.oldPrice):null,clean(data.imageUrl,1000)||null,data.isActive===true,Math.max(0,Number(data.lowStockThreshold)||5)]);
+  if(!result.rowCount) fail("Produit introuvable.");
+  return {ok:true};
+});
+
+export const adminArchiveProduct = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+  await requireRole(data.token, ["admin"]);
+  const db=getDb();
+  const result=await db.query("update public.products set is_active=false,deleted_at=now(),updated_at=now() where id=$1 and deleted_at is null returning id",[data.productId]);
+  if(!result.rowCount) fail("Produit introuvable.");
+  return {ok:true};
+});
+
+export const markNotificationRead = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+  const user=await requireUser(data.token);
+  await (await getDb()).query("update public.notifications set read_at=now() where id=$1 and user_id=$2",[data.notificationId,user.id]);
+  return {ok:true};
 });
