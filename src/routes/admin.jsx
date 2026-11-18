@@ -1,7 +1,7 @@
 import { useEffect,useState } from "react";
 import { createFileRoute,Link } from "@tanstack/react-router";
 import { getAccessToken } from "../lib/auth-client";
-import { getAdminDashboard,getAdminDeliveries,getAdminReports,adminCreateProduct,adminCreateDeliveryZone,adminCreateCourier,adminAssignCourier,adminUpdateOrderStatus,adminAdjustStock } from "../lib/commerce.server";
+import { getAdminDashboard,getAdminDeliveries,getAdminReports,adminCreateProduct,adminCreateDeliveryZone,adminCreateCourier,adminAssignCourier,adminUpdateOrderStatus,adminAdjustStock } from "../lib/commerce";
 export const Route=createFileRoute("/admin")({component:AdminPage});
 const money=new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
 function AdminPage(){
