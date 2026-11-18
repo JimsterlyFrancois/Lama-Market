@@ -269,3 +269,54 @@ export const getAdminReports = createServerFn({ method: "GET" }).inputValidator(
   ]);
   return {daily:daily.rows,topProducts:top.rows};
 });
+
+
+export const adminCreateCourier = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+  const admin = await requireRole(data.token, ["admin"]);
+  const db = getDb();
+  const email = clean(data.email, 254).toLowerCase();
+  const phone = clean(data.phone, 40);
+  const displayName = clean(data.displayName, 120);
+  if (!email || !phone || !displayName) fail("E-mail, nom et téléphone du livreur sont requis.");
+  const found = await db.query('select id from neon_auth."user" where lower(email)=lower($1) limit 1', [email]);
+  if (!found.rowCount) fail("Ce compte doit d'abord être créé par son titulaire dans Lama Market.");
+  const userId = found.rows[0].id;
+  await db.query("insert into public.user_roles(user_id,role,created_by) values($1,'courier',$2) on conflict(user_id,role) do update set is_active=true", [userId, admin.id]);
+  await db.query("insert into public.courier_profiles(user_id,phone,display_name,employment_type,is_active) values($1,$2,$3,$4,true) on conflict(user_id) do update set phone=excluded.phone,display_name=excluded.display_name,employment_type=excluded.employment_type,is_active=true,updated_at=now()", [userId, phone, displayName, data.employmentType === "employee" ? "employee" : "mandated"]);
+  return { ok: true, userId };
+});
+
+export const adminUpdateOrderStatus = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+  const admin = await requireRole(data.token, ["admin"]);
+  const allowed = ["confirmed","preparing","ready_for_delivery","completed","cancelled"];
+  if (!allowed.includes(data.status)) fail("Statut de commande invalide.");
+  const db = getDb();
+  const client = await db.connect();
+  try {
+    await client.query("begin");
+    const order = await client.query("select id,customer_id,status from public.orders where id=$1 for update", [data.orderId]);
+    if (!order.rowCount) fail("Commande introuvable.");
+    if (data.status === "cancelled") {
+      const reservations = await client.query("select product_id,quantity from public.stock_reservations where order_item_id in(select id from public.order_items where order_id=$1) and status='reserved' for update", [data.orderId]);
+      for (const reservation of reservations.rows) {
+        await client.query("update public.products set stock=stock+$2,updated_at=now() where id=$1", [reservation.product_id,reservation.quantity]);
+        await client.query("insert into public.stock_movements(product_id,quantity_delta,movement_type,reference_type,reference_id,note,created_by) values($1,$2,'reservation_release','order',$3,'Libération après annulation',$4)", [reservation.product_id,reservation.quantity,data.orderId,admin.id]);
+      }
+      await client.query("update public.stock_reservations set status='released',released_at=now() where order_item_id in(select id from public.order_items where order_id=$1) and status='reserved'", [data.orderId]);
+      await client.query("update public.deliveries set status='returned',updated_at=now() where order_id=$1 and status not in('delivered','returned')", [data.orderId]);
+      await client.query("update public.orders set payment_status=case when payment_status='paid' then 'refunded' else payment_status end,cancelled_at=now(),updated_at=now() where id=$1", [data.orderId]);
+    }
+    await client.query("update public.orders set status=$2,updated_at=now() where id=$1", [data.orderId,data.status]);
+    await client.query("insert into public.order_status_history(order_id,previous_status,new_status,note,actor_id) values($1,$2,$3,$4,$5)", [data.orderId,order.rows[0].status,data.status,clean(data.note,500)||null,admin.id]);
+    await client.query("insert into public.notifications(user_id,type,title,message,data) values($1,'order_update','Mise à jour de commande',$2,$3)", [order.rows[0].customer_id,"Votre commande est maintenant : "+data.status,{orderId:data.orderId}]);
+    await client.query("commit");
+    return {ok:true};
+  } catch(e) { await client.query("rollback"); throw e; } finally { client.release(); }
+});
+
+export const getAdminDeliveries = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+  await requireRole(data.token, ["admin"]);
+  const db = getDb();
+  const result = await db.query("select d.id,d.status,d.fee,o.order_number,o.address_snapshot,o.total,cp.display_name courier_name,cp.user_id courier_id from public.deliveries d join public.orders o on o.id=d.order_id left join public.courier_profiles cp on cp.user_id=d.courier_id order by d.created_at desc limit 50");
+  return result.rows;
+});
