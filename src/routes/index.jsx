@@ -43,7 +43,6 @@ function HomePage() {
   async function loadProducts() {
     setLoading(true);
     setError("");
-
     try {
       const result = await getCatalog();
       setProducts(result.products ?? []);
@@ -93,7 +92,7 @@ function HomePage() {
           <a href="#categories">Catégories</a>
           <a href="#avantages">Nos engagements</a>
         </nav>
-        <div className="header-actions"><a className="header-account" href="/auth">Mon compte</a><a className="header-cta" href="/panier"><ShoppingBasket size={17} /> Mon panier</a></div>
+        <a className="header-cta" href="#catalogue"><ShoppingBasket size={17} /> Voir les produits</a>
       </header>
 
       <section className="hero">
@@ -171,13 +170,13 @@ function HomePage() {
           </div>
         ) : (
           <div className="product-grid">
-            {visibleProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={async () => { try { const session = await authClient?.getSession(); if (!session?.data?.user) { window.location.href = "/auth"; return; } const token = await getAccessToken(); await addCartItem({ data: { token, productId: product.id, quantity: 1 } }); window.location.href = "/panier"; } catch (e) { window.alert(e.message || "Impossible d’ajouter ce produit."); } }} />)}
+            {visibleProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={async () => { try { const session = await authClient?.getSession(); if (!session?.data?.user) { window.location.href = "/auth"; return; } const token = await getAccessToken(); await addCartItem({ data: { token, productId: product.id, quantity: 1 } }); window.location.href = "/panier"; } catch (error) { window.alert(error.message || "Impossible d’ajouter ce produit."); } }} />)}
           </div>
         )}
       </section>
 
       <footer className="site-footer">
-        <a className="brand footer-brand" href="/"><span className="brand-mark"><img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" className="brand-logo-icon" width="30" height="30" /></span><span className="brand-name">Lama <strong>Market</strong><small>FRAÎCHEUR & BONNES AFFAIRES</small></span></a>
+        <a className="brand footer-brand" href="#"><span className="brand-mark"><img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" className="brand-logo-icon" width="30" height="30" /></span><span className="brand-name">Lama <strong>Market</strong><small>FRAÎCHEUR & BONNES AFFAIRES</small></span></a>
         <p>Votre marché en ligne, à Cap-Haïtien.</p>
         <span>© {new Date().getFullYear()} Lama Market. Tous droits réservés.</span>
       </footer>
