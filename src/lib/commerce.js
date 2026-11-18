@@ -177,6 +177,7 @@ export const adminCreateProduct = createServerFn({ method: "POST" }).inputValida
   const db = await getDb();
   const result = await db.query("insert into public.products(name,description,category,price,old_price,stock,image_url,is_active,sku,low_stock_threshold,sort_order) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0) returning id", [name,clean(data.description,2000)||null,category,price,data.oldPrice?Number(data.oldPrice):null,stock,clean(data.imageUrl,1000)||null,data.isActive===true,clean(data.sku,80)||null,Math.max(0,Number(data.lowStockThreshold)||5)]);
   if (stock > 0) await db.query("insert into public.stock_movements(product_id,quantity_delta,movement_type,note,created_by) values($1,$2,'initial','Stock initial',$3)",[result.rows[0].id,stock,admin.id]);
+  if (data.imageKey) await db.query("insert into public.product_images(product_id,storage_key,alt_text,is_primary) values($1,$2,$3,true)",[result.rows[0].id,clean(data.imageKey,1024),name]);
   return { id: result.rows[0].id };
 });
 
@@ -322,4 +323,11 @@ export const getAdminDeliveries = createServerFn({ method: "GET" }).inputValidat
   const db = await getDb();
   const result = await db.query("select d.id,d.status,d.fee,o.order_number,o.address_snapshot,o.total,cp.display_name courier_name,cp.user_id courier_id from public.deliveries d join public.orders o on o.id=d.order_id left join public.courier_profiles cp on cp.user_id=d.courier_id order by d.created_at desc limit 50");
   return result.rows;
+});
+
+
+export const getProductImageUploadUrl = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+  await requireRole(data.token, ["admin"]);
+  const storage = await import("./storage.server");
+  return storage.createProductUpload({ contentType: data.contentType, size: Number(data.size) });
 });
