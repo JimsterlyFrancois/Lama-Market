@@ -359,3 +359,94 @@ export const markNotificationRead = createServerFn({ method: "POST" }).inputVali
   await (await getDb()).query("update public.notifications set read_at=now() where id=$1 and user_id=$2",[data.notificationId,user.id]);
   return {ok:true};
 });
+
+
+// Internal employees of the single Lama Market store. These are not marketplace sellers.
+async function requireStoreStaff(token, allowed = []) {
+  const user = await requireUser(token);
+  const db = await getDb();
+  const admin = await db.query("select 1 from public.user_roles where user_id=$1 and role='admin' and is_active=true", [user.id]);
+  if (admin.rowCount) return { ...user, staffRole: "admin" };
+  const result = await db.query("select staff_role from public.staff_members where user_id=$1 and is_active=true", [user.id]);
+  if (!result.rowCount) fail("Accès réservé à l'équipe de Lama Market.", 403);
+  const staffRole = result.rows[0].staff_role;
+  if (allowed.length && !allowed.includes(staffRole)) fail("Cette action ne fait pas partie de vos responsabilités.", 403);
+  return { ...user, staffRole };
+}
+
+export const getStaffWorkspace = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+  const staff = await requireStoreStaff(data.token);
+  const db = await getDb();
+  const [orders, products, payments, profile] = await Promise.all([
+    db.query("select o.id,o.order_number,o.status,o.payment_status,o.delivery_status,o.total,o.created_at,o.address_snapshot,coalesce(json_agg(json_build_object('name',oi.product_name,'quantity',oi.quantity)) filter(where oi.id is not null),'[]') items from public.orders o left join public.order_items oi on oi.order_id=o.id where o.status not in ('completed','cancelled') group by o.id order by o.created_at asc limit 40"),
+    db.query("select id,name,sku,stock,low_stock_threshold,is_active from public.products where deleted_at is null order by name limit 150"),
+    db.query("select p.id,p.method,p.amount,p.status,p.external_reference,p.created_at,o.order_number from public.payments p join public.orders o on o.id=p.order_id order by p.created_at desc limit 30"),
+    db.query('select display_name,staff_role,phone from public.staff_members where user_id=$1', [staff.id]),
+  ]);
+  return { staffRole: staff.staffRole, profile: profile.rows[0] || null, orders: orders.rows, products: products.rows, payments: payments.rows };
+});
+
+export const adminListStaff = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+  await requireRole(data.token, ["admin"]);
+  const db = await getDb();
+  const result = await db.query('select s.user_id,s.display_name,s.phone,s.staff_role,s.is_active,u.email from public.staff_members s join neon_auth."user" u on u.id=s.user_id order by s.created_at');
+  return result.rows;
+});
+
+export const adminAddStaff = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+  const admin = await requireRole(data.token, ["admin"]);
+  const email = clean(data.email, 254).toLowerCase();
+  const displayName = clean(data.displayName, 120);
+  const role = clean(data.staffRole, 30);
+  if (!email || !displayName || !["manager","cashier","inventory","fulfillment"].includes(role)) fail("E-mail, nom et fonction valides requis.");
+  const db = await getDb();
+  const found = await db.query('select id from neon_auth."user" where lower(email)=lower($1) limit 1', [email]);
+  if (!found.rowCount) fail("La personne doit d'abord créer son compte Lama Market.");
+  await db.query("insert into public.staff_members(user_id,display_name,phone,staff_role,created_by,is_active) values($1,$2,$3,$4,$5,true) on conflict(user_id) do update set display_name=excluded.display_name,phone=excluded.phone,staff_role=excluded.staff_role,is_active=true,updated_at=now()", [found.rows[0].id, displayName, clean(data.phone,40)||null, role, admin.id]);
+  return { ok: true };
+});
+
+export const adminUpdateStaff = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+  await requireRole(data.token, ["admin"]);
+  const role = clean(data.staffRole, 30);
+  if (!["manager","cashier","inventory","fulfillment"].includes(role)) fail("Fonction invalide.");
+  const result = await (await getDb()).query("update public.staff_members set staff_role=$2,is_active=$3,updated_at=now() where user_id=$1 returning user_id", [data.userId, role, data.isActive === true]);
+  if (!result.rowCount) fail("Employé introuvable.");
+  return { ok: true };
+});
+
+export const staffUpdateOrderStatus = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+  const staff = await requireStoreStaff(data.token, ["admin","manager","cashier","fulfillment"]);
+  const allowed = ["confirmed","preparing","ready_for_delivery"];
+  if (!allowed.includes(data.status)) fail("Statut de commande invalide.");
+  const db = await getDb();
+  const client = await db.connect();
+  try {
+    await client.query("begin");
+    const order = await client.query("select id,customer_id,status from public.orders where id=$1 for update", [data.orderId]);
+    if (!order.rowCount) fail("Commande introuvable.");
+    const transitions = { confirmed:["preparing"], preparing:["ready_for_delivery"], ready_for_delivery:[] };
+    if (!(transitions[order.rows[0].status] || []).includes(data.status)) fail("Cette étape a déjà été traitée ou n'est pas autorisée.");
+    await client.query("update public.orders set status=$2,updated_at=now() where id=$1", [data.orderId,data.status]);
+    await client.query("insert into public.order_status_history(order_id,previous_status,new_status,note,actor_id) values($1,$2,$3,$4,$5)", [data.orderId,order.rows[0].status,data.status,clean(data.note,300)||"Mise à jour par l'équipe boutique",staff.id]);
+    await client.query("insert into public.notifications(user_id,type,title,message,data) values($1,'order_update','Mise à jour de commande',$2,$3)", [order.rows[0].customer_id,"Votre commande est maintenant : "+data.status,{orderId:data.orderId}]);
+    await client.query("commit");
+    return { ok: true };
+  } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
+});
+
+export const staffAdjustStock = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+  const staff = await requireStoreStaff(data.token, ["admin","manager","inventory"]);
+  const delta = Math.trunc(Number(data.delta));
+  if (!Number.isInteger(delta) || delta === 0) fail("Saisissez une quantité entière non nulle.");
+  const db = await getDb();
+  const client = await db.connect();
+  try {
+    await client.query("begin");
+    const updated = await client.query("update public.products set stock=stock+$2,updated_at=now() where id=$1 and stock+$2>=0 and deleted_at is null returning stock", [data.productId,delta]);
+    if (!updated.rowCount) fail("Produit introuvable ou stock négatif interdit.");
+    await client.query("insert into public.stock_movements(product_id,quantity_delta,movement_type,note,created_by) values($1,$2,'adjustment',$3,$4)", [data.productId,delta,clean(data.note,300)||"Mouvement saisi par l'équipe",staff.id]);
+    await client.query("commit");
+    return { stock: updated.rows[0].stock };
+  } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
+});
