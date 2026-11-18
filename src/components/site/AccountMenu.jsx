@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { User, LayoutDashboard, LogOut, LogIn } from "lucide-react";
+import { LayoutDashboard, LogOut } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,7 +30,7 @@ export default function AccountMenu() {
       aria-label="Mon compte"
       className="grid h-10 w-10 place-items-center rounded-full text-foreground/70 transition-colors hover:bg-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
-      <User className="h-5 w-5" strokeWidth={1.9} />
+      <img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" className="h-7 w-7 object-contain" />
     </button>
   );
 
@@ -42,7 +42,7 @@ export default function AccountMenu() {
         aria-label="Se connecter"
         className="grid h-10 w-10 place-items-center rounded-full text-foreground/70 transition-colors hover:bg-secondary hover:text-primary"
       >
-        <LogIn className="h-5 w-5" strokeWidth={1.9} />
+        <img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" className="h-7 w-7 object-contain" />
       </button>
     );
   }
