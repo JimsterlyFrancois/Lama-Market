@@ -245,6 +245,7 @@ export const courierUpdateDelivery = createServerFn({ method: "POST" }).inputVal
     if(!delivery.rowCount) fail("Livraison introuvable.");
     const transitions = { assigned:["preparing","in_transit","failed"], preparing:["in_transit","failed"], in_transit:["delivered","failed"], failed:["in_transit","returned"], returned:[], delivered:[] };
     if (!(transitions[delivery.rows[0].status] || []).includes(data.status)) fail("Cette transition de livraison n'est pas autorisée.");
+    if (data.status === "delivered" && delivery.rows[0].payment_status === "cash_due" && data.cashCollected !== true) fail("Confirmez la réception du paiement en espèces avant de clôturer cette livraison.");
     await client.query("update public.deliveries set status=$2,picked_up_at=case when $2='in_transit' then now() else picked_up_at end,delivered_at=case when $2='delivered' then now() else delivered_at end,recipient_name=$3,proof_url=$4,failure_reason=$5,courier_note=$6,updated_at=now() where id=$1",[data.deliveryId,data.status,clean(data.recipientName,120)||null,clean(data.proofUrl,1000)||null,clean(data.failureReason,500)||null,clean(data.note,500)||null]);
     await client.query("update public.orders set delivery_status=$2,updated_at=now() where id=$1",[delivery.rows[0].order_id,data.status]);
     await client.query("insert into public.delivery_events(delivery_id,status,note,proof_url,actor_id) values($1,$2,$3,$4,$5)",[data.deliveryId,data.status,clean(data.note,500)||null,clean(data.proofUrl,1000)||null,courier.id]);
@@ -422,7 +423,7 @@ export const adminUpdateStaff = createServerFn({ method: "POST" }).inputValidato
 });
 
 export const staffUpdateOrderStatus = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
-  const staff = await requireStoreStaff(data.token, ["admin","manager","cashier","fulfillment"]);
+  const staff = await requireStoreStaff(data.token, ["admin","manager","fulfillment"]);
   const allowed = ["confirmed","preparing","ready_for_delivery"];
   if (!allowed.includes(data.status)) fail("Statut de commande invalide.");
   const db = await getDb();
