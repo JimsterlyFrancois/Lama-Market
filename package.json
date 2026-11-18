@@ -8,11 +8,10 @@
   },
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "npm test && vite build",
     "preview": "vite preview",
     "deploy": "vercel --prod",
-    "test": "node --test",
-    "prebuild": "npm test"
+    "test": "node --test"
   },
   "dependencies": {
     "@hookform/resolvers": "5.2.2",
