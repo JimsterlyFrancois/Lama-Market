@@ -67,3 +67,51 @@
 .admin-product-info{display:grid;gap:4px;min-width:0;flex:1}
 .admin-product-info strong{font-size:12px}.admin-product-info small{font-size:10px;color:#7a897e}
 @media(max-width:640px){.admin-product-line{flex-wrap:wrap}.admin-product-info{min-width:calc(100% - 70px)}}
+
+
+/* Responsive operations workspace for Lama Market employees */
+.staff-page .commerce-container{max-width:1120px}
+.staff-section{margin-top:22px}
+.staff-section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+.staff-section-heading h2{margin:7px 0 0;font:800 22px Manrope,sans-serif;color:#174c35}
+.staff-count{min-width:34px;height:34px;padding:0 10px;border-radius:999px;background:#eff5e6;color:#416b36;display:grid;place-items:center;font-size:12px;font-weight:800}
+.staff-order-list,.staff-stock-list,.staff-payment-list,.staff-team-list{display:grid;gap:10px}
+.staff-order{border:1px solid #e7ece4;border-radius:15px;padding:16px;background:#fff}
+.staff-order-top,.staff-order-bottom,.staff-stock-row,.staff-payment-row,.staff-team-row{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.staff-order-top strong,.staff-stock-info strong,.staff-payment-row strong,.staff-team-row strong{color:#254b36;font-size:13px}
+.staff-order-top>span,.staff-stock-info small,.staff-payment-row small,.staff-team-row small{display:block;color:#8a968b;font-size:10px}
+.staff-order-details{display:flex;flex-wrap:wrap;gap:8px 18px;margin:12px 0;color:#748276;font-size:10px}
+.staff-order-details b{color:#385a40}
+.staff-order>p{font-size:11px;color:#718075;line-height:1.5}
+.staff-order-bottom{border-top:1px solid #eff2ed;padding-top:12px}
+.staff-order-bottom>strong{font-size:14px;color:#176b45}
+.staff-action{width:auto!important;margin:0!important;padding:10px 14px!important;font-size:11px!important}
+.staff-done{font-size:11px;color:#718075}
+.staff-stock-row,.staff-payment-row,.staff-team-row{padding:12px 0;border-bottom:1px solid #edf1eb}
+.staff-stock-info,.staff-payment-row>div,.staff-team-row>div{flex:1;min-width:0}
+.staff-stock-info small,.staff-payment-row small,.staff-team-row small{margin-top:4px;overflow-wrap:anywhere}
+.staff-stock-low,.staff-stock-ok{font-size:10px;font-weight:800;white-space:nowrap;border-radius:999px;padding:7px 10px}
+.staff-stock-low{background:#fff0eb;color:#a34f3b}
+.staff-stock-ok{background:#eff6e8;color:#527b3a}
+.staff-payment-row>span{font-size:10px;color:#65766a;white-space:nowrap}
+.staff-add-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.staff-add-form .account-submit{grid-column:1/-1}
+.staff-team-row select{max-width:190px}
+@media(max-width:640px){
+ .staff-page .commerce-container{padding-left:14px;padding-right:14px}
+ .staff-section-heading h2{font-size:19px}
+ .staff-order{padding:13px}
+ .staff-order-top{align-items:flex-start;flex-direction:column;gap:4px}
+ .staff-order-details{display:grid;gap:7px}
+ .staff-order-bottom{align-items:flex-start;flex-direction:column}
+ .staff-action{width:100%!important}
+ .staff-stock-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+ .staff-stock-row .text-button{grid-column:1/-1;text-align:left}
+ .staff-payment-row{display:grid;grid-template-columns:1fr auto;gap:5px}
+ .staff-payment-row>span{grid-column:1/-1}
+ .staff-add-form{grid-template-columns:1fr}
+ .staff-add-form .account-submit{grid-column:auto}
+ .staff-team-row{display:grid;grid-template-columns:1fr auto;gap:8px}
+ .staff-team-row>div{grid-column:1/-1}
+ .staff-team-row select{max-width:none;min-width:0;width:100%}
+}
