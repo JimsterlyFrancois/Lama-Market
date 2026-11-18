@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { getAccessToken } from "../lib/auth-client";
 import { getMyCart, updateCartItem, removeCartItem, checkout } from "../lib/commerce";
@@ -7,6 +7,7 @@ export const Route = createFileRoute("/panier")({ component: CartPage });
 const money = new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
 function CartPage(){
   const navigate=useNavigate();
+  const idempotencyKey=useRef(crypto.randomUUID());
   const [items,setItems]=useState([]);
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
@@ -31,7 +32,7 @@ function CartPage(){
     event.preventDefault();setBusy(true);setMessage("");
     try{
       const token=await getAccessToken();
-      const result=await checkout({data:{token,address,paymentMethod:"cash_on_delivery",idempotencyKey:crypto.randomUUID()}});
+      const result=await checkout({data:{token,address,paymentMethod:"cash_on_delivery",idempotencyKey:idempotencyKey.current}});
       navigate({to:"/commandes",search:{newOrder:result.orderNumber}});
     }catch(e){setMessage(e.message||"Impossible de valider la commande.");}
     finally{setBusy(false);}
