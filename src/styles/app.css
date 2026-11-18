@@ -119,3 +119,5 @@
 
 /* Lama Market official identity */
 .brand-logo-icon{display:block;width:100%;height:100%;object-fit:contain}.service-logo-icon{display:block;width:25px;height:25px;object-fit:contain}.product-placeholder-logo{width:52px;height:52px;object-fit:contain}.hero-art.hero-cover-art{display:block;width:100%;height:auto;min-height:0;max-height:420px;aspect-ratio:1/1;position:relative;overflow:hidden;border-radius:28px;background:#fff;box-shadow:0 24px 60px rgba(20,74,50,.18)}.hero-cover-image{display:block;width:100%;height:100%;object-fit:cover;object-position:center center}.hero-image-tag{position:absolute;left:16px;bottom:16px;max-width:calc(100% - 32px);padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.92);color:#174c35;font-size:11px;font-weight:700;box-shadow:0 4px 18px rgba(0,0,0,.08)}@media(max-width:640px){.hero-art.hero-cover-art{margin-top:8px;width:100%;max-height:none;aspect-ratio:1/1}}
+
+.commerce-header .commerce-brand{display:inline-flex;align-items:center;gap:9px}.commerce-header .commerce-brand img{width:32px;height:32px;object-fit:contain;flex:none}
