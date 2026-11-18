@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { getAccessToken } from "../lib/auth-client";
-import { getMyCart, updateCartItem, removeCartItem, checkout } from "../lib/commerce.server";
+import { getMyCart, updateCartItem, removeCartItem, checkout } from "../lib/commerce";
 
 export const Route = createFileRoute("/panier")({ component: CartPage });
 const money = new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
