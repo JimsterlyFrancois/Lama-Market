@@ -4,7 +4,7 @@ import {
   Search, ShoppingBasket, Leaf, Truck, ShieldCheck, Clock3,
   ChevronRight, SlidersHorizontal, PackageSearch, RefreshCw,
 } from "lucide-react";
-import { getCatalog, addCartItem } from "../lib/commerce.server";
+import { getCatalog, addCartItem } from "../lib/commerce";
 import { authClient, getAccessToken } from "../lib/auth-client";
 
 export const Route = createFileRoute("/")({
