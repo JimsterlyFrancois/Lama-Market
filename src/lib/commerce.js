@@ -166,7 +166,7 @@ export const getAdminDashboard = createServerFn({ method: "GET" }).inputValidato
     db.query("select id,order_number,status,payment_status,delivery_status,total,created_at from public.orders order by created_at desc limit 12"),
     db.query("select id,name,stock,low_stock_threshold from public.products where is_active=true and stock<=low_stock_threshold order by stock asc limit 20"),
     db.query("select up.user_id,up.display_name,up.phone,up.employment_type,up.is_active from public.courier_profiles up order by up.display_name"),
-    db.query("select id,name,category,price,stock,is_active,image_url,sku,low_stock_threshold from public.products where deleted_at is null order by created_at desc limit 100"),
+    db.query("select id,name,description,category,price,old_price,stock,is_active,image_url,sku,low_stock_threshold from public.products where deleted_at is null order by created_at desc limit 100"),
   ]);
   return { stats: stats.rows[0], orders: orders.rows, lowStock: lowStock.rows, couriers: couriers.rows, products: products.rows };
 });
