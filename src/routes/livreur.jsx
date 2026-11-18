@@ -1,7 +1,7 @@
 import { useEffect,useState } from "react";
 import { createFileRoute,Link } from "@tanstack/react-router";
 import { getAccessToken } from "../lib/auth-client";
-import { getCourierDeliveries,courierUpdateDelivery } from "../lib/commerce.server";
+import { getCourierDeliveries,courierUpdateDelivery } from "../lib/commerce";
 export const Route=createFileRoute("/livreur")({component:CourierPage});
 function CourierPage(){const [rows,setRows]=useState([]);const [message,setMessage]=useState("Chargement…");const [busy,setBusy]=useState("");
 async function load(){try{const token=await getAccessToken();setRows(await getCourierDeliveries({data:{token}}));setMessage("");}catch(e){setMessage(e.message);}}
