@@ -202,7 +202,7 @@ export const adminCreateDeliveryZone = createServerFn({ method: "POST" }).inputV
   await requireRole(data.token, ["admin"]);
   const city=clean(data.city,100), name=clean(data.name,100), fee=Number(data.fee);
   if(!city||!name||!Number.isFinite(fee)||fee<0) fail("Nom, ville et tarif valides requis.");
-  const db=getDb();
+  const db=await getDb();
   const zone=await db.query("insert into public.delivery_zones(name,city,area,estimated_min_days,estimated_max_days) values($1,$2,$3,$4,$5) returning id",[name,city,clean(data.area,100)||null,Math.max(0,Number(data.minDays)||1),Math.max(1,Number(data.maxDays)||3)]);
   await db.query("insert into public.delivery_rates(zone_id,fee,free_from) values($1,$2,$3)",[zone.rows[0].id,fee,data.freeFrom?Number(data.freeFrom):null]);
   return { id:zone.rows[0].id };
@@ -210,7 +210,7 @@ export const adminCreateDeliveryZone = createServerFn({ method: "POST" }).inputV
 
 export const adminAssignCourier = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
   const admin=await requireRole(data.token,["admin"]);
-  const db=getDb();
+  const db=await getDb();
   const client=await db.connect();
   try {
     await client.query("begin");
@@ -228,7 +228,7 @@ export const adminAssignCourier = createServerFn({ method: "POST" }).inputValida
 
 export const getCourierDeliveries = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
   const courier=await requireRole(data.token,["courier"]);
-  const db=getDb();
+  const db=await getDb();
   const result=await db.query("select d.id,d.status,d.fee,d.scheduled_at,o.order_number,o.total,o.address_snapshot,o.payment_status from public.deliveries d join public.orders o on o.id=d.order_id where d.courier_id=$1 order by d.created_at desc",[courier.id]);
   return result.rows;
 });
@@ -237,7 +237,7 @@ export const courierUpdateDelivery = createServerFn({ method: "POST" }).inputVal
   const courier=await requireRole(data.token,["courier"]);
   const allowed=["preparing","in_transit","delivered","failed","returned"];
   if(!allowed.includes(data.status)) fail("Statut de livraison invalide.");
-  const db=getDb();
+  const db=await getDb();
   const client=await db.connect();
   try{
     await client.query("begin");
@@ -261,14 +261,14 @@ export const courierUpdateDelivery = createServerFn({ method: "POST" }).inputVal
 
 export const getMyNotifications = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
   const user=await requireUser(data.token);
-  const db=getDb();
+  const db=await getDb();
   const result=await db.query("select id,type,title,message,data,read_at,created_at from public.notifications where user_id=$1 order by created_at desc limit 50",[user.id]);
   return result.rows;
 });
 
 export const getAdminReports = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token,["admin"]);
-  const db=getDb();
+  const db=await getDb();
   const [daily,top]=await Promise.all([
     db.query("select date_trunc('day',created_at)::date day,count(*)::int orders,coalesce(sum(total),0)::numeric(12,2) sales from public.orders where created_at>=now()-interval '30 days' and payment_status in ('paid','cash_collected') and status<>'cancelled' group by 1 order by 1"),
     db.query("select oi.product_name,sum(oi.quantity)::int quantity,sum(oi.line_total)::numeric(12,2) sales from public.order_items oi join public.orders o on o.id=oi.order_id where o.status<>'cancelled' group by oi.product_name order by quantity desc limit 10"),
@@ -340,7 +340,7 @@ export const adminUpdateProduct = createServerFn({ method: "POST" }).inputValida
   await requireRole(data.token, ["admin"]);
   const name=clean(data.name,180), category=clean(data.category,80), price=Number(data.price);
   if(!name||!category||!Number.isFinite(price)||price<0) fail("Nom, catégorie et prix valides requis.");
-  const db=getDb();
+  const db=await getDb();
   const result=await db.query("update public.products set name=$2,description=$3,category=$4,price=$5,old_price=$6,image_url=$7,is_active=$8,low_stock_threshold=$9,updated_at=now() where id=$1 and deleted_at is null returning id",[data.productId,name,clean(data.description,2000)||null,category,price,data.oldPrice?Number(data.oldPrice):null,clean(data.imageUrl,1000)||null,data.isActive===true,Math.max(0,Number(data.lowStockThreshold)||5)]);
   if(!result.rowCount) fail("Produit introuvable.");
   return {ok:true};
@@ -348,7 +348,7 @@ export const adminUpdateProduct = createServerFn({ method: "POST" }).inputValida
 
 export const adminArchiveProduct = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
-  const db=getDb();
+  const db=await getDb();
   const result=await db.query("update public.products set is_active=false,deleted_at=now(),updated_at=now() where id=$1 and deleted_at is null returning id",[data.productId]);
   if(!result.rowCount) fail("Produit introuvable.");
   return {ok:true};
