@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { authClient, getAccessToken } from "../lib/auth-client";
-import { getMyAccessContext } from "../lib/commerce";
+import { authClient } from "../lib/auth-client";
 
 export const Route = createFileRoute("/auth")({ component: AuthPage });
 
