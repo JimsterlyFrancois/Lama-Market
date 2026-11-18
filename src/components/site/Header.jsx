@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Search, Heart, ShoppingBag, ListChecks } from "lucide-react";
-import { LOGO_URL } from "@/lib/brand";
 import ThemeToggle from "@/components/site/ThemeToggle";
 import AccountMenu from "@/components/site/AccountMenu";
 import { useCart } from "@/lib/cart";
@@ -65,7 +64,7 @@ export default function Header() {
             className="flex flex-none items-center gap-2.5 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
             aria-label="Lama Market — accueil"
           >
-            <img src={LOGO_URL} alt="Logo Lama Market" className="h-11 w-11 rounded-2xl bg-white object-contain" />
+            <img src="/images/lama-market-logo.svg" alt="Logo Lama Market" className="h-11 w-11 rounded-xl bg-white object-contain" />
             <span className="hidden font-heading text-[17px] font-extrabold leading-none tracking-tight text-primary sm:block">
               Lama Market
             </span>
