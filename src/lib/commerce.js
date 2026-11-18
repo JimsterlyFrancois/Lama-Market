@@ -377,10 +377,16 @@ async function requireStoreStaff(token, allowed = []) {
 export const getStaffWorkspace = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
   const staff = await requireStoreStaff(data.token);
   const db = await getDb();
+  const canSeeOrders = ["admin","manager","cashier","fulfillment"].includes(staff.staffRole);
+  const canSeePayments = ["admin","manager","cashier"].includes(staff.staffRole);
   const [orders, products, payments, profile] = await Promise.all([
-    db.query("select o.id,o.order_number,o.status,o.payment_status,o.delivery_status,o.total,o.created_at,o.address_snapshot,coalesce(json_agg(json_build_object('name',oi.product_name,'quantity',oi.quantity)) filter(where oi.id is not null),'[]') items from public.orders o left join public.order_items oi on oi.order_id=o.id where o.status not in ('completed','cancelled') group by o.id order by o.created_at asc limit 40"),
+    canSeeOrders
+      ? db.query("select o.id,o.order_number,o.status,o.payment_status,o.delivery_status,o.total,o.created_at,o.address_snapshot,coalesce(json_agg(json_build_object('name',oi.product_name,'quantity',oi.quantity)) filter(where oi.id is not null),'[]') items from public.orders o left join public.order_items oi on oi.order_id=o.id where o.status not in ('completed','cancelled') group by o.id order by o.created_at asc limit 40")
+      : Promise.resolve({ rows: [] }),
     db.query("select id,name,sku,stock,low_stock_threshold,is_active from public.products where deleted_at is null order by name limit 150"),
-    db.query("select p.id,p.method,p.amount,p.status,p.external_reference,p.created_at,o.order_number from public.payments p join public.orders o on o.id=p.order_id order by p.created_at desc limit 30"),
+    canSeePayments
+      ? db.query("select p.id,p.method,p.amount,p.status,p.external_reference,p.created_at,o.order_number from public.payments p join public.orders o on o.id=p.order_id order by p.created_at desc limit 30")
+      : Promise.resolve({ rows: [] }),
     db.query('select display_name,staff_role,phone from public.staff_members where user_id=$1', [staff.id]),
   ]);
   return { staffRole: staff.staffRole, profile: profile.rows[0] || null, orders: orders.rows, products: products.rows, payments: payments.rows };
