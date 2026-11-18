@@ -16,7 +16,7 @@ function AuthPage() {
   useEffect(() => {
     if (!authClient) return;
     authClient.getSession().then(({ data }) => {
-      if (data?.user) navigate({ to: "/compte" });
+      if (data?.user) navigate({ to: "/espace" });
     }).catch(() => {});
   }, [navigate]);
 
@@ -30,7 +30,7 @@ function AuthPage() {
         ? await authClient.signUp.email({ name: name.trim(), email: email.trim(), password })
         : await authClient.signIn.email({ email: email.trim(), password });
       if (result.error) throw new Error(result.error.message || "Authentification impossible.");
-      if (result.data?.user) navigate({ to: "/compte" });
+      if (result.data?.user) navigate({ to: "/espace" });
       else setMessage("Vérifiez votre boîte e-mail pour poursuivre.");
     } catch (error) {
       setMessage(error.message || "Une erreur est survenue.");
