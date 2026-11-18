@@ -1,7 +1,4 @@
 -- Lama Market single-store commerce schema. Requires Neon Auth and the catalogue migration 202611170001.
-create or replace function public.set_updated_at() returns trigger language plpgsql as $$
-begin new.updated_at = now(); return new; end; $$;
-
 create table if not exists public.categories (
   slug text primary key, name text not null, description text, image_url text,
   sort_order integer not null default 0, is_active boolean not null default true,
@@ -12,20 +9,32 @@ insert into public.categories(slug,name,sort_order) values
  ('electronique','Électronique',4),('mode','Mode',5),('bons-plans','Bons plans',6)
 on conflict(slug) do nothing;
 
-alter table public.products
- add column if not exists sku text,
- add column if not exists slug text,
- add column if not exists cost_price numeric(12,2),
- add column if not exists low_stock_threshold integer not null default 5,
- add column if not exists is_featured boolean not null default false,
- add column if not exists deleted_at timestamptz;
-create unique index if not exists products_sku_unique_idx on public.products(sku) where sku is not null;
-create unique index if not exists products_slug_unique_idx on public.products(slug) where slug is not null;
-do $$ begin
- if not exists (select 1 from pg_constraint where conname='products_category_fkey' and conrelid='public.products'::regclass) then
-  alter table public.products add constraint products_category_fkey foreign key(category) references public.categories(slug) on update cascade on delete restrict;
- end if;
-end $$;
+create table if not exists public.products(
+ id uuid primary key default gen_random_uuid(),
+ name text not null,
+ description text,
+ category text not null references public.categories(slug) on update cascade on delete restrict,
+ price numeric(12,2) not null check(price>=0),
+ old_price numeric(12,2),
+ discount_ends_at timestamptz,
+ stock integer not null default 0 check(stock>=0),
+ badge text,
+ rating numeric(3,2),
+ reviews integer not null default 0,
+ image_url text,
+ is_active boolean not null default false,
+ sort_order integer not null default 0,
+ sku text unique,
+ slug text unique,
+ cost_price numeric(12,2),
+ low_stock_threshold integer not null default 5,
+ is_featured boolean not null default false,
+ deleted_at timestamptz,
+ created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now()
+);
+create index if not exists products_active_sort_idx on public.products(is_active,sort_order);
+
 
 create table if not exists public.user_roles (
  user_id uuid not null references neon_auth."user"(id) on delete cascade,
@@ -180,10 +189,3 @@ create table if not exists public.audit_logs (
 create index if not exists audit_logs_created_idx on public.audit_logs(created_at desc);
 create index if not exists audit_logs_entity_idx on public.audit_logs(entity_type,entity_id,created_at desc);
 
-do $$ declare t text; begin
- foreach t in array array['categories','customer_profiles','courier_profiles','addresses','carts','cart_items','delivery_zones','delivery_rates','orders','payments','deliveries','coupons']
- loop
-  execute format('drop trigger if exists set_updated_at on public.%I',t);
-  execute format('create trigger set_updated_at before update on public.%I for each row execute function public.set_updated_at()',t);
- end loop;
-end $$;
