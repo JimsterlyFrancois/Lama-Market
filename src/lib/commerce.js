@@ -456,3 +456,20 @@ export const staffAdjustStock = createServerFn({ method: "POST" }).inputValidato
     return { stock: updated.rows[0].stock };
   } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
 });
+
+
+// Resolve the correct workspace after authentication using server-verified roles.
+export const getMyAccessContext = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+  const user = await requireUser(data.token);
+  const db = await getDb();
+  const [roles, staff, courier] = await Promise.all([
+    db.query("select role from public.user_roles where user_id=$1 and is_active=true", [user.id]),
+    db.query("select staff_role from public.staff_members where user_id=$1 and is_active=true", [user.id]),
+    db.query("select is_active from public.courier_profiles where user_id=$1", [user.id]),
+  ]);
+  const roleSet = new Set(roles.rows.map(row => row.role));
+  if (roleSet.has("admin")) return { destination: "/admin", primaryRole: "admin" };
+  if (staff.rowCount) return { destination: "/equipe", primaryRole: staff.rows[0].staff_role };
+  if (courier.rows[0]?.is_active && roleSet.has("courier")) return { destination: "/livreur", primaryRole: "courier" };
+  return { destination: "/compte", primaryRole: "customer" };
+});
