@@ -69,6 +69,8 @@ function StaffPage() {
 
   const role = workspace?.staffRole;
   const canHandleOrders = ["admin", "manager", "cashier", "fulfillment"].includes(role);
+  const canAdvanceOrders = ["admin", "manager", "fulfillment"].includes(role);
+  const canSeePayments = ["admin", "manager", "cashier"].includes(role);
   const canHandleStock = ["admin", "manager", "inventory"].includes(role);
 
   return (
@@ -105,8 +107,8 @@ function StaffPage() {
                 </div>
                 <p>{order.items.map(item => item.quantity + " × " + item.name).join(" · ")}</p>
                 <div className="staff-order-bottom"><strong>{Number(order.total).toLocaleString("fr-HT")} HTG</strong>
-                  {order.status === "confirmed" && <button className="account-submit staff-action" disabled={busy} onClick={() => act(staffUpdateOrderStatus, { orderId: order.id, status: "preparing" })}>Commencer la préparation</button>}
-                  {order.status === "preparing" && <button className="account-submit staff-action" disabled={busy} onClick={() => act(staffUpdateOrderStatus, { orderId: order.id, status: "ready_for_delivery" })}>Marquer prête</button>}
+                  {order.status === "confirmed" && (canAdvanceOrders ? <button className="account-submit staff-action" disabled={busy} onClick={() => act(staffUpdateOrderStatus, { orderId: order.id, status: "preparing" })}>Commencer la préparation</button> : <span className="staff-done">En attente de préparation</span>)}
+                  {order.status === "preparing" && (canAdvanceOrders ? <button className="account-submit staff-action" disabled={busy} onClick={() => act(staffUpdateOrderStatus, { orderId: order.id, status: "ready_for_delivery" })}>Marquer prête</button> : <span className="staff-done">Préparation en cours</span>)}
                   {order.status === "ready_for_delivery" && <span className="staff-done">En attente du livreur</span>}
                 </div>
               </article>)}
@@ -125,7 +127,7 @@ function StaffPage() {
             </div>
           </section>}
 
-          <section className="commerce-panel staff-section">
+          {canSeePayments && <section className="commerce-panel staff-section">
             <div className="staff-section-heading"><div><span className="section-kicker">SUIVI FINANCIER</span><h2>Derniers paiements</h2></div></div>
             <div className="staff-payment-list">
               {workspace.payments.map(payment => <div className="staff-payment-row" key={payment.id}>
@@ -136,7 +138,7 @@ function StaffPage() {
               {!workspace.payments.length && <p className="muted-note">Aucun paiement enregistré.</p>}
             </div>
             <p className="muted-note">Les paiements mobiles ne sont pas encore activés. Un statut « payé » n'est affiché qu'après confirmation enregistrée côté serveur.</p>
-          </section>
+          </section>}
 
           {role === "admin" && <section className="commerce-panel staff-section">
             <div className="staff-section-heading"><div><span className="section-kicker">GESTION DU PERSONNEL</span><h2>Les membres de l'équipe</h2></div><span className="staff-count">{team.length}</span></div>
