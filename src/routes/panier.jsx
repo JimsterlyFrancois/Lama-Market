@@ -38,7 +38,7 @@ function CartPage(){
     finally{setBusy(false);}
   }
   return <main className="commerce-page">
-    <header className="commerce-header"><Link to="/" className="back-link">← Continuer les achats</Link><strong>Lama Market</strong></header>
+    <header className="commerce-header"><Link to="/" className="back-link">← Continuer les achats</Link><strong className="commerce-brand"><img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" />Lama Market</strong></header>
     <div className="commerce-container">
       <div className="commerce-title"><span>VOTRE SÉLECTION</span><h1>Mon panier</h1><p>Vérifiez les articles avant de confirmer votre commande.</p></div>
       {loading?<div className="commerce-panel">Chargement du panier…</div>:message && !items.length?<div className="commerce-panel"><p>{message}</p><Link to="/auth" className="account-submit inline-submit">Se connecter</Link></div>:!items.length?<div className="commerce-panel"><h2>Votre panier est vide</h2><Link to="/" className="account-submit inline-submit">Découvrir les produits</Link></div>:<>
