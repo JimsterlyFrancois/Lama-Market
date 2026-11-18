@@ -152,7 +152,7 @@ export const getMyOrders = createServerFn({ method: "GET" }).inputValidator((dat
   const user = await ensureCustomer(data.token);
   const db = await getDb();
   const result = await db.query(
-    "select o.id,o.order_number,o.status,o.payment_status,o.delivery_status,o.subtotal,o.delivery_fee,o.total,o.currency,o.created_at,o.address_snapshot,coalesce(json_agg(json_build_object('name',oi.product_name,'quantity',oi.quantity,'price',oi.unit_price)) filter(where oi.id is not null),'[]') items from public.orders o left join public.order_items oi on oi.order_id=o.id where o.customer_id=$1 group by o.id order by o.created_at desc",
+    "select o.id,o.order_number,o.status,o.payment_status,o.delivery_status,o.subtotal,o.delivery_fee,o.total,o.currency,o.created_at,coalesce(json_agg(json_build_object('name',oi.product_name,'quantity',oi.quantity,'price',oi.unit_price)) filter(where oi.id is not null),'[]') items from public.orders o left join public.order_items oi on oi.order_id=o.id where o.customer_id=$1 group by o.id order by o.created_at desc",
     [user.id],
   );
   return result.rows;
@@ -229,7 +229,7 @@ export const adminAssignCourier = createServerFn({ method: "POST" }).inputValida
 export const getCourierDeliveries = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
   const courier=await requireRole(data.token,["courier"]);
   const db=await getDb();
-  const result=await db.query("select d.id,d.status,d.fee,d.scheduled_at,o.order_number,o.total,o.address_snapshot,o.payment_status from public.deliveries d join public.orders o on o.id=d.order_id where d.courier_id=$1 order by d.created_at desc",[courier.id]);
+  const result=await db.query("select d.id,d.status,d.fee,d.scheduled_at,o.order_number,o.total,o.payment_status from public.deliveries d join public.orders o on o.id=d.order_id where d.courier_id=$1 order by d.created_at desc",[courier.id]);
   return result.rows;
 });
 
@@ -325,7 +325,7 @@ export const adminUpdateOrderStatus = createServerFn({ method: "POST" }).inputVa
 export const getAdminDeliveries = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
   const db = await getDb();
-  const result = await db.query("select d.id,d.status,d.fee,o.order_number,o.address_snapshot,o.total,cp.display_name courier_name,cp.user_id courier_id from public.deliveries d join public.orders o on o.id=d.order_id left join public.courier_profiles cp on cp.user_id=d.courier_id order by d.created_at desc limit 50");
+  const result = await db.query("select d.id,d.status,d.fee,o.order_number,o.total,cp.display_name courier_name,cp.user_id courier_id from public.deliveries d join public.orders o on o.id=d.order_id left join public.courier_profiles cp on cp.user_id=d.courier_id order by d.created_at desc limit 50");
   return result.rows;
 });
 
@@ -380,11 +380,14 @@ export const getStaffWorkspace = createServerFn({ method: "GET" }).inputValidato
   const db = await getDb();
   const canSeeOrders = ["admin","manager","cashier","fulfillment"].includes(staff.staffRole);
   const canSeePayments = ["admin","manager","cashier"].includes(staff.staffRole);
+  const canSeeProducts = ["admin","manager","inventory"].includes(staff.staffRole);
   const [orders, products, payments, profile] = await Promise.all([
     canSeeOrders
-      ? db.query("select o.id,o.order_number,o.status,o.payment_status,o.delivery_status,o.total,o.created_at,o.address_snapshot,coalesce(json_agg(json_build_object('name',oi.product_name,'quantity',oi.quantity)) filter(where oi.id is not null),'[]') items from public.orders o left join public.order_items oi on oi.order_id=o.id where o.status not in ('completed','cancelled') group by o.id order by o.created_at asc limit 40")
+      ? db.query("select o.id,o.order_number,o.status,o.payment_status,o.delivery_status,o.total,o.created_at,coalesce(json_agg(json_build_object('name',oi.product_name,'quantity',oi.quantity)) filter(where oi.id is not null),'[]') items from public.orders o left join public.order_items oi on oi.order_id=o.id where o.status not in ('completed','cancelled') group by o.id order by o.created_at asc limit 40")
       : Promise.resolve({ rows: [] }),
-    db.query("select id,name,sku,stock,low_stock_threshold,is_active from public.products where deleted_at is null order by name limit 150"),
+    canSeeProducts
+      ? db.query("select id,name,sku,stock,low_stock_threshold,is_active from public.products where deleted_at is null order by name limit 150")
+      : Promise.resolve({ rows: [] }),
     canSeePayments
       ? db.query("select p.id,p.method,p.amount,p.status,p.external_reference,p.created_at,o.order_number from public.payments p join public.orders o on o.id=p.order_id order by p.created_at desc limit 30")
       : Promise.resolve({ rows: [] }),
