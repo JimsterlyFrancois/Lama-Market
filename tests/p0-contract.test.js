@@ -4,10 +4,10 @@ import { access, readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
- test("server functions use the supported TanStack validator API", async () => {
+test("server functions use the supported TanStack validator API", async () => {
   const commerce = await read("../src/lib/commerce.js");
-  assert.doesNotMatch(commerce, /\\.inputValidator\\s*\\(/);
-  assert.match(commerce, /\\.validator\\s*\\(/);
+  assert.doesNotMatch(commerce, /\.inputValidator\s*\(/);
+  assert.match(commerce, /\.validator\s*\(/);
 });
 
 test("the application uses Neon Auth and does not declare legacy auth SDKs", async () => {
@@ -21,8 +21,8 @@ test("the application uses Neon Auth and does not declare legacy auth SDKs", asy
 test("the official cover and logo are included in the storefront", async () => {
   const home = await read("../src/routes/index.jsx");
   const root = await read("../src/routes/__root.jsx");
-  assert.match(home, /\\/images\\/lama-market-cover\\.webp/);
-  assert.match(home, /\\/images\\/lama-market-logo\\.svg/);
+  assert.match(home, /\/images\/lama-market-cover\.webp/);
+  assert.match(home, /\/images\/lama-market-logo\.svg/);
   assert.match(root, /rel: "icon"/);
   await access(new URL("../public/images/lama-market-cover.webp", import.meta.url));
   await access(new URL("../public/images/lama-market-logo.svg", import.meta.url));
