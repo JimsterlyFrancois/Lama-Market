@@ -1,7 +1,7 @@
 import { useEffect,useState } from "react";
 import { createFileRoute,Link } from "@tanstack/react-router";
 import { authClient,getAccessToken } from "../lib/auth-client";
-import { getMyProfile,updateMyProfile,getMyNotifications } from "../lib/commerce.server";
+import { getMyProfile,updateMyProfile,getMyNotifications } from "../lib/commerce";
 export const Route=createFileRoute("/compte")({component:ProfilePage});
 function ProfilePage(){
  const [profile,setProfile]=useState({phone:"",preferred_name:""});const [email,setEmail]=useState("");const [notice,setNotice]=useState("");const [notifications,setNotifications]=useState([]);
