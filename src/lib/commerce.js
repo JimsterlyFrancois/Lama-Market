@@ -20,14 +20,14 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
   return { products: products.rows, categories: categories.rows };
 });
 
-export const getMyProfile = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const getMyProfile = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   const user = await ensureCustomer(data.token);
   const db = await getDb();
   const result = await db.query("select cp.phone,cp.preferred_name,u.name,u.email from public.customer_profiles cp join neon_auth.\"user\" u on u.id=cp.user_id where cp.user_id=$1", [user.id]);
   return { user, profile: result.rows[0] ?? null };
 });
 
-export const updateMyProfile = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const updateMyProfile = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const user = await ensureCustomer(data.token);
   const db = await getDb();
   const phone = clean(data.phone, 40);
@@ -36,7 +36,7 @@ export const updateMyProfile = createServerFn({ method: "POST" }).inputValidator
   return { ok: true };
 });
 
-export const getMyCart = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const getMyCart = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   const user = await ensureCustomer(data.token);
   const db = await getDb();
   const result = await db.query(
@@ -46,7 +46,7 @@ export const getMyCart = createServerFn({ method: "GET" }).inputValidator((data)
   return result.rows;
 });
 
-export const addCartItem = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const addCartItem = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const user = await ensureCustomer(data.token);
   const quantity = Math.max(1, Math.min(99, Number(data.quantity) || 1));
   const db = await getDb();
@@ -66,7 +66,7 @@ export const addCartItem = createServerFn({ method: "POST" }).inputValidator((da
   } finally { client.release(); }
 });
 
-export const updateCartItem = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const updateCartItem = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const user = await ensureCustomer(data.token);
   const quantity = Math.max(1, Math.min(99, Number(data.quantity) || 1));
   const db = await getDb();
@@ -78,13 +78,13 @@ export const updateCartItem = createServerFn({ method: "POST" }).inputValidator(
   return { ok: true };
 });
 
-export const removeCartItem = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const removeCartItem = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const user = await ensureCustomer(data.token);
   await (await getDb()).query("delete from public.cart_items ci using public.carts c where ci.id=$1 and ci.cart_id=c.id and c.user_id=$2", [data.itemId, user.id]);
   return { ok: true };
 });
 
-export const checkout = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const checkout = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const user = await ensureCustomer(data.token);
   if (data.paymentMethod !== "cash_on_delivery") fail("Seul le paiement à la livraison est actuellement activé.");
   const address = data.address || {};
@@ -148,7 +148,7 @@ export const checkout = createServerFn({ method: "POST" }).inputValidator((data)
   } finally { client.release(); }
 });
 
-export const getMyOrders = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const getMyOrders = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   const user = await ensureCustomer(data.token);
   const db = await getDb();
   const result = await db.query(
@@ -158,7 +158,7 @@ export const getMyOrders = createServerFn({ method: "GET" }).inputValidator((dat
   return result.rows;
 });
 
-export const getAdminDashboard = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const getAdminDashboard = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
   const db = await getDb();
   const [stats, orders, lowStock, couriers, products] = await Promise.all([
@@ -171,7 +171,7 @@ export const getAdminDashboard = createServerFn({ method: "GET" }).inputValidato
   return { stats: stats.rows[0], orders: orders.rows, lowStock: lowStock.rows, couriers: couriers.rows, products: products.rows };
 });
 
-export const adminCreateProduct = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const adminCreateProduct = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const admin = await requireRole(data.token, ["admin"]);
   const name = clean(data.name,180), category = clean(data.category,80), price = Number(data.price), stock = Math.max(0,Math.floor(Number(data.stock)||0));
   if (!name || !category || !Number.isFinite(price) || price < 0) fail("Nom, catégorie et prix valides requis.");
@@ -182,7 +182,7 @@ export const adminCreateProduct = createServerFn({ method: "POST" }).inputValida
   return { id: result.rows[0].id };
 });
 
-export const adminAdjustStock = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const adminAdjustStock = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const admin = await requireRole(data.token, ["admin"]);
   const delta = Math.trunc(Number(data.delta));
   if (!Number.isInteger(delta) || delta === 0) fail("Le mouvement doit être un entier non nul.");
@@ -198,7 +198,7 @@ export const adminAdjustStock = createServerFn({ method: "POST" }).inputValidato
   } catch(e) { await client.query("rollback"); throw e; } finally { client.release(); }
 });
 
-export const adminCreateDeliveryZone = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const adminCreateDeliveryZone = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
   const city=clean(data.city,100), name=clean(data.name,100), fee=Number(data.fee);
   if(!city||!name||!Number.isFinite(fee)||fee<0) fail("Nom, ville et tarif valides requis.");
@@ -208,7 +208,7 @@ export const adminCreateDeliveryZone = createServerFn({ method: "POST" }).inputV
   return { id:zone.rows[0].id };
 });
 
-export const adminAssignCourier = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const adminAssignCourier = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const admin=await requireRole(data.token,["admin"]);
   const db=await getDb();
   const client=await db.connect();
@@ -226,14 +226,14 @@ export const adminAssignCourier = createServerFn({ method: "POST" }).inputValida
   } catch(e){await client.query("rollback");throw e;}finally{client.release();}
 });
 
-export const getCourierDeliveries = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const getCourierDeliveries = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   const courier=await requireRole(data.token,["courier"]);
   const db=await getDb();
   const result=await db.query("select d.id,d.status,d.fee,d.scheduled_at,o.order_number,o.total,o.payment_status from public.deliveries d join public.orders o on o.id=d.order_id where d.courier_id=$1 order by d.created_at desc",[courier.id]);
   return result.rows;
 });
 
-export const courierUpdateDelivery = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const courierUpdateDelivery = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const courier=await requireRole(data.token,["courier"]);
   const allowed=["preparing","in_transit","delivered","failed","returned"];
   if(!allowed.includes(data.status)) fail("Statut de livraison invalide.");
@@ -260,14 +260,14 @@ export const courierUpdateDelivery = createServerFn({ method: "POST" }).inputVal
   }catch(e){await client.query("rollback");throw e;}finally{client.release();}
 });
 
-export const getMyNotifications = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const getMyNotifications = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   const user=await requireUser(data.token);
   const db=await getDb();
   const result=await db.query("select id,type,title,message,data,read_at,created_at from public.notifications where user_id=$1 order by created_at desc limit 50",[user.id]);
   return result.rows;
 });
 
-export const getAdminReports = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const getAdminReports = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token,["admin"]);
   const db=await getDb();
   const [daily,top]=await Promise.all([
@@ -278,7 +278,7 @@ export const getAdminReports = createServerFn({ method: "GET" }).inputValidator(
 });
 
 
-export const adminCreateCourier = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const adminCreateCourier = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const admin = await requireRole(data.token, ["admin"]);
   const db = await getDb();
   const email = clean(data.email, 254).toLowerCase();
@@ -293,7 +293,7 @@ export const adminCreateCourier = createServerFn({ method: "POST" }).inputValida
   return { ok: true, userId };
 });
 
-export const adminUpdateOrderStatus = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const adminUpdateOrderStatus = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const admin = await requireRole(data.token, ["admin"]);
   const allowed = ["confirmed","preparing","ready_for_delivery","completed","cancelled"];
   if (!allowed.includes(data.status)) fail("Statut de commande invalide.");
@@ -322,7 +322,7 @@ export const adminUpdateOrderStatus = createServerFn({ method: "POST" }).inputVa
   } catch(e) { await client.query("rollback"); throw e; } finally { client.release(); }
 });
 
-export const getAdminDeliveries = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const getAdminDeliveries = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
   const db = await getDb();
   const result = await db.query("select d.id,d.status,d.fee,o.order_number,o.total,cp.display_name courier_name,cp.user_id courier_id from public.deliveries d join public.orders o on o.id=d.order_id left join public.courier_profiles cp on cp.user_id=d.courier_id order by d.created_at desc limit 50");
@@ -330,14 +330,14 @@ export const getAdminDeliveries = createServerFn({ method: "GET" }).inputValidat
 });
 
 
-export const getProductImageUploadUrl = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const getProductImageUploadUrl = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
   const storage = await import("./storage.server");
   return storage.createProductUpload({ contentType: data.contentType, size: Number(data.size) });
 });
 
 
-export const adminUpdateProduct = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const adminUpdateProduct = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
   const name=clean(data.name,180), category=clean(data.category,80), price=Number(data.price);
   if(!name||!category||!Number.isFinite(price)||price<0) fail("Nom, catégorie et prix valides requis.");
@@ -347,7 +347,7 @@ export const adminUpdateProduct = createServerFn({ method: "POST" }).inputValida
   return {ok:true};
 });
 
-export const adminArchiveProduct = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const adminArchiveProduct = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
   const db=await getDb();
   const result=await db.query("update public.products set is_active=false,deleted_at=now(),updated_at=now() where id=$1 and deleted_at is null returning id",[data.productId]);
@@ -355,7 +355,7 @@ export const adminArchiveProduct = createServerFn({ method: "POST" }).inputValid
   return {ok:true};
 });
 
-export const markNotificationRead = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const markNotificationRead = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const user=await requireUser(data.token);
   await (await getDb()).query("update public.notifications set read_at=now() where id=$1 and user_id=$2",[data.notificationId,user.id]);
   return {ok:true};
@@ -375,7 +375,7 @@ async function requireStoreStaff(token, allowed = []) {
   return { ...user, staffRole };
 }
 
-export const getStaffWorkspace = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const getStaffWorkspace = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   const staff = await requireStoreStaff(data.token);
   const db = await getDb();
   const canSeeOrders = ["admin","manager","cashier","fulfillment"].includes(staff.staffRole);
@@ -396,14 +396,14 @@ export const getStaffWorkspace = createServerFn({ method: "GET" }).inputValidato
   return { staffRole: staff.staffRole, profile: profile.rows[0] || null, orders: orders.rows, products: products.rows, payments: payments.rows };
 });
 
-export const adminListStaff = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const adminListStaff = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
   const db = await getDb();
   const result = await db.query('select s.user_id,s.display_name,s.phone,s.staff_role,s.is_active,u.email from public.staff_members s join neon_auth."user" u on u.id=s.user_id order by s.created_at');
   return result.rows;
 });
 
-export const adminAddStaff = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const adminAddStaff = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const admin = await requireRole(data.token, ["admin"]);
   const email = clean(data.email, 254).toLowerCase();
   const displayName = clean(data.displayName, 120);
@@ -416,7 +416,7 @@ export const adminAddStaff = createServerFn({ method: "POST" }).inputValidator((
   return { ok: true };
 });
 
-export const adminUpdateStaff = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const adminUpdateStaff = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
   const role = clean(data.staffRole, 30);
   if (!["manager","cashier","inventory","fulfillment"].includes(role)) fail("Fonction invalide.");
@@ -425,7 +425,7 @@ export const adminUpdateStaff = createServerFn({ method: "POST" }).inputValidato
   return { ok: true };
 });
 
-export const staffUpdateOrderStatus = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const staffUpdateOrderStatus = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const staff = await requireStoreStaff(data.token, ["admin","manager","fulfillment"]);
   const allowed = ["confirmed","preparing","ready_for_delivery"];
   if (!allowed.includes(data.status)) fail("Statut de commande invalide.");
@@ -445,7 +445,7 @@ export const staffUpdateOrderStatus = createServerFn({ method: "POST" }).inputVa
   } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
 });
 
-export const staffAdjustStock = createServerFn({ method: "POST" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const staffAdjustStock = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const staff = await requireStoreStaff(data.token, ["admin","manager","inventory"]);
   const delta = Math.trunc(Number(data.delta));
   if (!Number.isInteger(delta) || delta === 0) fail("Saisissez une quantité entière non nulle.");
@@ -463,7 +463,7 @@ export const staffAdjustStock = createServerFn({ method: "POST" }).inputValidato
 
 
 // Resolve the correct workspace after authentication using server-verified roles.
-export const getMyAccessContext = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
+export const getMyAccessContext = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   const user = await requireUser(data.token);
   const db = await getDb();
   const identity = await db.query('select email from neon_auth."user" where id=$1', [user.id]);
