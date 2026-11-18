@@ -77,7 +77,7 @@ function StaffPage() {
     <main className="commerce-page staff-page">
       <header className="commerce-header">
         <Link to="/">← Boutique</Link>
-        <strong>Équipe Lama Market</strong>
+        <strong className="commerce-brand"><img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" />Équipe Lama Market</strong>
         {role === "admin" && <Link to="/admin">Administration</Link>}
         <Link to="/compte">Mon compte</Link>
       </header>
