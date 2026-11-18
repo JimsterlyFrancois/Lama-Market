@@ -10,7 +10,8 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "vercel --prod"
+    "deploy": "vercel --prod",
+    "test": "node --test"
   },
   "dependencies": {
     "@hookform/resolvers": "5.2.2",
