@@ -463,6 +463,11 @@ export const staffAdjustStock = createServerFn({ method: "POST" }).inputValidato
 export const getMyAccessContext = createServerFn({ method: "GET" }).inputValidator((data) => data).handler(async ({ data }) => {
   const user = await requireUser(data.token);
   const db = await getDb();
+  const identity = await db.query('select email from neon_auth."user" where id=$1', [user.id]);
+  const adminEmail = process.env.LAMA_MARKET_ADMIN_EMAIL?.trim().toLowerCase();
+  if (identity.rows[0]?.email && adminEmail && identity.rows[0].email.toLowerCase() === adminEmail) {
+    await db.query("insert into public.user_roles(user_id,role,is_active) values($1,'admin',true) on conflict(user_id,role) do update set is_active=true", [user.id]);
+  }
   const [roles, staff, courier] = await Promise.all([
     db.query("select role from public.user_roles where user_id=$1 and is_active=true", [user.id]),
     db.query("select staff_role from public.staff_members where user_id=$1 and is_active=true", [user.id]),
