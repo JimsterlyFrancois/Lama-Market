@@ -37,3 +37,12 @@ test("legacy Base44 and Supabase Auth entry points are absent", async () => {
     await assert.rejects(access(new URL(path, import.meta.url)));
   }
 });
+
+test("server-side permissions are derived from verified Neon identity and database roles", async () => {
+  const auth = await read("../src/lib/auth.server.js");
+  const commerce = await read("../src/lib/commerce.js");
+  assert.match(auth, /jwtVerify\(token, getJwks\(\), \{ issuer \}\)/);
+  assert.match(auth, /select role from public\.user_roles where user_id=\$1 and is_active=true/);
+  assert.match(commerce, /requireRole\(data\.token, \["admin"\]\)/);
+  assert.doesNotMatch(auth, /payload\.role/);
+});
