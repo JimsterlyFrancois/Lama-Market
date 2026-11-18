@@ -85,7 +85,7 @@ function HomePage() {
 
       <header className="site-header">
         <a className="brand" href="/" aria-label="Lama Market, accueil">
-          <span className="brand-mark"><Leaf size={25} strokeWidth={2.5} /></span>
+          <span className="brand-mark"><img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" className="brand-logo-icon" width="32" height="32" /></span>
           <span className="brand-name">Lama <strong>Market</strong><small>FRAÎCHEUR & BONNES AFFAIRES</small></span>
         </a>
         <nav className="header-links" aria-label="Navigation principale">
@@ -104,23 +104,23 @@ function HomePage() {
           <a className="primary-button" href="#catalogue">Découvrir le catalogue <ChevronRight size={18} /></a>
           <div className="hero-trust"><span><ShieldCheck size={16} /> Sélection de produits</span><span><Clock3 size={16} /> Catalogue actualisé</span></div>
         </div>
-        <div className="hero-art" aria-label="Illustration de panier de courses">
-          <div className="hero-orbit orbit-one" />
-          <div className="hero-orbit orbit-two" />
-          <div className="hero-basket">
-            <div className="basket-goods"><span>🥑</span><span>🍊</span><span>🥖</span><span>🥬</span></div>
-            <div className="basket-body"><div className="basket-lines" /></div>
-            <div className="basket-handle" />
-          </div>
-          <div className="floating-tag tag-fresh">✦ Fraîcheur</div>
-          <div className="floating-tag tag-choice">✓ Bons choix</div>
+        <div className="hero-art hero-cover-art">
+          <img
+            className="hero-cover-image"
+            src="/images/lama-market-cover.webp"
+            alt="Une cliente découvre les produits et les rayons de Lama Market"
+            width="384"
+            height="384"
+            fetchPriority="high"
+          />
+          <span className="hero-image-tag">Lama Market · Qualité, variété au meilleur prix</span>
         </div>
       </section>
 
       <section className="benefits" id="avantages">
         <div><span className="benefit-icon"><Truck size={19} /></span><span><strong>Pratique</strong><small>Un catalogue accessible partout</small></span></div>
         <div><span className="benefit-icon"><ShieldCheck size={19} /></span><span><strong>Clair et transparent</strong><small>Prix et informations visibles</small></span></div>
-        <div><span className="benefit-icon"><Leaf size={19} /></span><span><strong>Votre marché</strong><small>Une sélection pour le quotidien</small></span></div>
+        <div><span className="benefit-icon"><img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" className="service-logo-icon" width="25" height="25" /></span><span><strong>Votre marché</strong><small>Une sélection pour le quotidien</small></span></div>
       </section>
 
       <section className="catalog-section" id="catalogue">
@@ -177,7 +177,7 @@ function HomePage() {
       </section>
 
       <footer className="site-footer">
-        <a className="brand footer-brand" href="#"><span className="brand-mark"><Leaf size={22} /></span><span className="brand-name">Lama <strong>Market</strong><small>FRAÎCHEUR & BONNES AFFAIRES</small></span></a>
+        <a className="brand footer-brand" href="/"><span className="brand-mark"><img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" className="brand-logo-icon" width="30" height="30" /></span><span className="brand-name">Lama <strong>Market</strong><small>FRAÎCHEUR & BONNES AFFAIRES</small></span></a>
         <p>Votre marché en ligne, à Cap-Haïtien.</p>
         <span>© {new Date().getFullYear()} Lama Market. Tous droits réservés.</span>
       </footer>
@@ -191,7 +191,7 @@ function ProductCard({ product, onAdd }) {
   return (
     <article className="product-card">
       <div className="product-image-wrap">
-        {product.image_url ? <img className="product-image" src={product.image_url} alt={product.name} loading="lazy" /> : <div className="product-placeholder"><Leaf size={35} /><span>Lama Market</span></div>}
+        {product.image_url ? <img className="product-image" src={product.image_url} alt={product.name} loading="lazy" /> : <div className="product-placeholder"><img src="/images/lama-market-logo.svg" alt="" className="product-placeholder-logo" width="52" height="52" /><span>Lama Market</span></div>}
         {product.badge && <span className="product-badge">{product.badge}</span>}
         {!available && <span className="stock-badge">Épuisé</span>}
       </div>
