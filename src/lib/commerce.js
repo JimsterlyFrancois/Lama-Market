@@ -240,8 +240,10 @@ export const courierUpdateDelivery = createServerFn({ method: "POST" }).inputVal
   const client=await db.connect();
   try{
     await client.query("begin");
-    const delivery=await client.query("select d.id,d.order_id,o.payment_status,o.payment_status from public.deliveries d join public.orders o on o.id=d.order_id where d.id=$1 and d.courier_id=$2 for update",[data.deliveryId,courier.id]);
+    const delivery=await client.query("select d.id,d.order_id,d.status,o.payment_status from public.deliveries d join public.orders o on o.id=d.order_id where d.id=$1 and d.courier_id=$2 for update",[data.deliveryId,courier.id]);
     if(!delivery.rowCount) fail("Livraison introuvable.");
+    const transitions = { assigned:["preparing","in_transit","failed"], preparing:["in_transit","failed"], in_transit:["delivered","failed"], failed:["in_transit","returned"], returned:[], delivered:[] };
+    if (!(transitions[delivery.rows[0].status] || []).includes(data.status)) fail("Cette transition de livraison n'est pas autorisée.");
     await client.query("update public.deliveries set status=$2,picked_up_at=case when $2='in_transit' then now() else picked_up_at end,delivered_at=case when $2='delivered' then now() else delivered_at end,recipient_name=$3,proof_url=$4,failure_reason=$5,courier_note=$6,updated_at=now() where id=$1",[data.deliveryId,data.status,clean(data.recipientName,120)||null,clean(data.proofUrl,1000)||null,clean(data.failureReason,500)||null,clean(data.note,500)||null]);
     await client.query("update public.orders set delivery_status=$2,updated_at=now() where id=$1",[delivery.rows[0].order_id,data.status]);
     await client.query("insert into public.delivery_events(delivery_id,status,note,proof_url,actor_id) values($1,$2,$3,$4,$5)",[data.deliveryId,data.status,clean(data.note,500)||null,clean(data.proofUrl,1000)||null,courier.id]);
@@ -267,8 +269,8 @@ export const getAdminReports = createServerFn({ method: "GET" }).inputValidator(
   await requireRole(data.token,["admin"]);
   const db=getDb();
   const [daily,top]=await Promise.all([
-    db.query("select date_trunc('day',created_at)::date day,count(*)::int orders,coalesce(sum(total),0)::numeric(12,2) sales from public.orders where created_at>=now()-interval '30 days' group by 1 order by 1"),
-    db.query("select product_name,sum(quantity)::int quantity,sum(line_total)::numeric(12,2) sales from public.order_items group by product_name order by quantity desc limit 10"),
+    db.query("select date_trunc('day',created_at)::date day,count(*)::int orders,coalesce(sum(total),0)::numeric(12,2) sales from public.orders where created_at>=now()-interval '30 days' and payment_status in ('paid','cash_collected') and status<>'cancelled' group by 1 order by 1"),
+    db.query("select oi.product_name,sum(oi.quantity)::int quantity,sum(oi.line_total)::numeric(12,2) sales from public.order_items oi join public.orders o on o.id=oi.order_id where o.status<>'cancelled' group by oi.product_name order by quantity desc limit 10"),
   ]);
   return {daily:daily.rows,topProducts:top.rows};
 });
@@ -308,7 +310,7 @@ export const adminUpdateOrderStatus = createServerFn({ method: "POST" }).inputVa
       }
       await client.query("update public.stock_reservations set status='released',released_at=now() where order_item_id in(select id from public.order_items where order_id=$1) and status='reserved'", [data.orderId]);
       await client.query("update public.deliveries set status='returned',updated_at=now() where order_id=$1 and status not in('delivered','returned')", [data.orderId]);
-      await client.query("update public.orders set payment_status=case when payment_status='paid' then 'refunded' else payment_status end,cancelled_at=now(),updated_at=now() where id=$1", [data.orderId]);
+      await client.query("update public.orders set cancelled_at=now(),updated_at=now() where id=$1", [data.orderId]);
     }
     await client.query("update public.orders set status=$2,updated_at=now() where id=$1", [data.orderId,data.status]);
     await client.query("insert into public.order_status_history(order_id,previous_status,new_status,note,actor_id) values($1,$2,$3,$4,$5)", [data.orderId,order.rows[0].status,data.status,clean(data.note,500)||null,admin.id]);
