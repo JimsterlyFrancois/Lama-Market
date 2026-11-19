@@ -121,3 +121,48 @@
 .brand-logo-icon{display:block;width:100%;height:100%;object-fit:contain}.service-logo-icon{display:block;width:25px;height:25px;object-fit:contain}.product-placeholder-logo{width:52px;height:52px;object-fit:contain}.hero-art.hero-cover-art{display:block;width:100%;height:auto;min-height:0;max-height:420px;aspect-ratio:1/1;position:relative;overflow:hidden;border-radius:28px;background:#fff;box-shadow:0 24px 60px rgba(20,74,50,.18)}.hero-cover-image{display:block;width:100%;height:100%;object-fit:cover;object-position:center center}.hero-image-tag{position:absolute;left:16px;bottom:16px;max-width:calc(100% - 32px);padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.92);color:#174c35;font-size:11px;font-weight:700;box-shadow:0 4px 18px rgba(0,0,0,.08)}@media(max-width:640px){.hero-art.hero-cover-art{margin-top:8px;width:100%;max-height:none;aspect-ratio:1/1}}
 
 .commerce-header .commerce-brand{display:inline-flex;align-items:center;gap:9px}.commerce-header .commerce-brand img{width:32px;height:32px;object-fit:contain;flex:none}
+
+
+/* Global dark appearance and persistent theme control */
+.global-theme-toggle{position:fixed;right:20px;bottom:20px;z-index:2000;display:inline-flex;align-items:center;gap:9px;min-height:44px;padding:0 16px;border:1px solid rgba(120,150,130,.28);border-radius:999px;background:#fff;color:#174c35;box-shadow:0 8px 28px rgba(0,0,0,.18);font-size:12px;font-weight:800;cursor:pointer;transition:background .2s,color .2s,transform .2s}
+.global-theme-toggle:hover{transform:translateY(-2px)}
+.global-theme-toggle:focus-visible{outline:3px solid #8bad4e;outline-offset:3px}
+html[data-theme="dark"]{color-scheme:dark;background:#101914}
+html[data-theme="dark"] body{background:#101914;color:#e5eee7}
+html[data-theme="dark"] .site-shell{background:#101914;color:#e5eee7}
+html[data-theme="dark"] .announcement{background:#091f16;color:#e4eee6}
+html[data-theme="dark"] .site-header{background:rgba(17,29,22,.88);border-color:rgba(220,240,225,.1);box-shadow:0 10px 35px rgba(0,0,0,.25)}
+html[data-theme="dark"] .brand-name,html[data-theme="dark"] .header-links a,html[data-theme="dark"] .section-heading h2,html[data-theme="dark"] .benefits strong,html[data-theme="dark"] .product-info h3{color:#e3efe5}
+html[data-theme="dark"] .brand-name strong{color:#b4d47a}
+html[data-theme="dark"] .brand-name small,html[data-theme="dark"] .section-heading p,html[data-theme="dark"] .benefits small,html[data-theme="dark"] .product-description{color:#a0b2a4}
+html[data-theme="dark"] .header-links{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.08)}
+html[data-theme="dark"] .header-links a{background:transparent}
+html[data-theme="dark"] .header-links a:hover,html[data-theme="dark"] .header-links a.active{background:#263b2d;color:#dff0df;border-color:#385340}
+html[data-theme="dark"] .hero{background:#1b3023}
+html[data-theme="dark"] .hero h1{color:#e5f0e5}
+html[data-theme="dark"] .hero h1 em{color:#b4d47a}
+html[data-theme="dark"] .hero-copy>p,html[data-theme="dark"] .hero-trust{color:#b0c0b2}
+html[data-theme="dark"] .eyebrow{background:#263b2d;color:#c2dc9b}
+html[data-theme="dark"] .benefits,html[data-theme="dark"] .product-card,html[data-theme="dark"] .catalog-message{background:#19271e;border-color:#2b4031}
+html[data-theme="dark"] .benefit-icon,html[data-theme="dark"] .product-image-wrap,html[data-theme="dark"] .product-placeholder{background:#24382a}
+html[data-theme="dark"] .product-count,html[data-theme="dark"] .category-chip{background:#22352a;color:#c1d2c3;border-color:#344b39}
+html[data-theme="dark"] .category-chip:hover,html[data-theme="dark"] .category-chip.selected{background:#176b45;color:#fff;border-color:#176b45}
+html[data-theme="dark"] .search-box,html[data-theme="dark"] .sort-box{background:#19271e;border-color:#344b39;color:#b6c8b8}
+html[data-theme="dark"] .search-box input,html[data-theme="dark"] .sort-box select{color:#e5eee7}
+html[data-theme="dark"] .product-info h3,html[data-theme="dark"] .catalog-message strong{color:#e3efe5}
+html[data-theme="dark"] .product-bottom{border-color:#2b4031}
+html[data-theme="dark"] .site-footer{background:#0b1c13;color:#b8c9ba}
+html[data-theme="dark"] .commerce-page{background:#101914;color:#e5eee7}
+html[data-theme="dark"] .commerce-header{background:rgba(17,29,22,.96);border-color:#2b4031}
+html[data-theme="dark"] .commerce-header strong,html[data-theme="dark"] .commerce-title h1,html[data-theme="dark"] .commerce-panel h2,html[data-theme="dark"] .commerce-panel h3,html[data-theme="dark"] .commerce-panel{color:#e3efe5}
+html[data-theme="dark"] .commerce-panel,html[data-theme="dark"] .account-card,html[data-theme="dark"] .admin-stat,html[data-theme="dark"] .staff-order{background:#19271e;border-color:#2b4031}
+html[data-theme="dark"] .commerce-title p,html[data-theme="dark"] .commerce-panel p,html[data-theme="dark"] .admin-stat small,html[data-theme="dark"] .staff-order p{color:#a0b2a4}
+html[data-theme="dark"] .account-card h1,html[data-theme="dark"] .account-brand{color:#e3efe5}
+html[data-theme="dark"] .account-form label,html[data-theme="dark"] .inline-label{color:#c1d2c3}
+html[data-theme="dark"] .account-form input,html[data-theme="dark"] .account-form select,html[data-theme="dark"] .account-form textarea,html[data-theme="dark"] .inline-label select,html[data-theme="dark"] .cart-item input,html[data-theme="dark"] .admin-order-line select{background:#101914;color:#e5eee7;border-color:#3a5140}
+html[data-theme="dark"] .auth-switch,html[data-theme="dark"] .payment-choice{background:#22352a;border-color:#344b39}
+html[data-theme="dark"] .auth-switch button.selected{background:#304936;color:#e3efe5}
+html[data-theme="dark"] .cart-item,html[data-theme="dark"] .notification-row,html[data-theme="dark"] .admin-order-line,html[data-theme="dark"] .table-line,html[data-theme="dark"] .staff-stock-row,html[data-theme="dark"] .staff-payment-row,html[data-theme="dark"] .staff-team-row{border-color:#2b4031}
+html[data-theme="dark"] .global-theme-toggle{background:#203429;color:#e5eee7;border-color:#45604c;box-shadow:0 8px 28px rgba(0,0,0,.4)}
+html[data-theme="dark"] .hero-image-tag{background:rgba(17,29,22,.9);color:#e3efe5}
+@media(prefers-reduced-motion:reduce){.global-theme-toggle{transition:none}}
