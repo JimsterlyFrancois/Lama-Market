@@ -1,9 +1,11 @@
+import { useEffect, useState } from "react";
 import {
   createRootRoute,
   HeadContent,
   Outlet,
   Scripts,
 } from "@tanstack/react-router";
+import { Moon, Sun } from "lucide-react";
 import appCss from "../styles/app.css?url";
 
 export const Route = createRootRoute({
@@ -41,8 +43,48 @@ function RootDocument() {
       </head>
       <body>
         <Outlet />
+        <GlobalThemeToggle />
         <Scripts />
       </body>
     </html>
+  );
+}
+
+function GlobalThemeToggle() {
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("lama-market-theme");
+      const preferred = saved === "dark" || (!saved && window.matchMedia?.("(prefers-color-scheme: dark)").matches);
+      setDark(Boolean(preferred));
+      document.documentElement.dataset.theme = preferred ? "dark" : "light";
+    } catch {
+      document.documentElement.dataset.theme = "light";
+    }
+  }, []);
+
+  function toggleTheme() {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.dataset.theme = next ? "dark" : "light";
+    try {
+      window.localStorage.setItem("lama-market-theme", next ? "dark" : "light");
+    } catch {
+      // The visual mode still changes when storage is unavailable.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="global-theme-toggle"
+      onClick={toggleTheme}
+      aria-label={dark ? "Activer le mode clair" : "Activer le mode sombre"}
+      title={dark ? "Mode clair" : "Mode sombre"}
+    >
+      {dark ? <Sun size={19} aria-hidden="true" /> : <Moon size={19} aria-hidden="true" />}
+      <span>{dark ? "Mode clair" : "Mode sombre"}</span>
+    </button>
   );
 }
