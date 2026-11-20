@@ -138,10 +138,21 @@ test("P1: Neon Auth customer screens implement verification OTP and password rec
   const reset = await read("../src/routes/reinitialiser.jsx");
   assert.match(client, /sendVerificationOtp/);
   assert.match(client, /verifyEmail/);
-  assert.match(client, /forgetPassword\.emailOtp/);
+  assert.match(client, /emailOtp\.requestPasswordReset/);
   assert.match(client, /emailOtp\.resetPassword/);
   assert.match(auth, /email-verification/);
   assert.match(auth, /Vérifier votre adresse/);
   assert.match(auth, /Mot de passe oublié/);
   assert.match(reset, /emailOtp\.resetPassword/);
+});
+
+test("P1: administrators can maintain and deactivate delivery zones and rates", async () => {
+  const commerce = await read("../src/lib/commerce.js");
+  const admin = await read("../src/routes/admin.jsx");
+  assert.match(commerce, /export const adminListDeliveryZones/);
+  assert.match(commerce, /export const adminUpdateDeliveryZone/);
+  assert.match(commerce, /export const adminArchiveDeliveryZone/);
+  assert.match(admin, /Zones et frais de livraison/);
+  assert.match(admin, /Modifier/);
+  assert.match(admin, /Désactiver/);
 });
