@@ -64,7 +64,7 @@ export async function ensureCustomer(token) {
     [user.id],
   );
   await db.query(
-    "insert into public.carts(user_id) values($1) on conflict(user_id) do nothing",
+    "insert into public.carts(user_id) values($1) on conflict(user_id) do update set status='active',updated_at=now() where public.carts.status<>'active'",
     [user.id],
   );
   return user;
