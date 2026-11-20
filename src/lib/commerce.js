@@ -534,3 +534,127 @@ export const getMyAccessContext = createServerFn({ method: "GET" }).validator((d
   if (courier.rows[0]?.is_active && roleSet.has("courier")) return { destination: "/livreur", primaryRole: "courier" };
   return { destination: "/compte", primaryRole: "customer" };
 });
+
+function slugifyCategory(value) {
+  return clean(value,100).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,80);
+}
+async function couponDiscount(q, codeValue, customerId, subtotal, lock=false) {
+  const code=clean(codeValue,64).toUpperCase();
+  if(!code) return {coupon:null,discount:0};
+  const result=await q.query(`select id,code,discount_type,discount_value,minimum_order,max_uses from public.coupons
+    where upper(code)=upper($1) and is_active=true and (starts_at is null or starts_at<=now()) and (ends_at is null or ends_at>now()) ${lock?"for update":""}`,[code]);
+  if(!result.rowCount) fail("Ce code promotionnel est invalide ou expiré.");
+  const coupon=result.rows[0];
+  if(subtotal<Number(coupon.minimum_order)) fail("Le montant minimum pour ce code promotionnel n'est pas atteint.");
+  const [uses,mine]=await Promise.all([
+    q.query("select count(*)::int count from public.coupon_redemptions where coupon_id=$1",[coupon.id]),
+    q.query("select count(*)::int count from public.coupon_redemptions where coupon_id=$1 and customer_id=$2",[coupon.id,customerId]),
+  ]);
+  if(coupon.max_uses!==null && uses.rows[0].count>=coupon.max_uses) fail("Ce code promotionnel a atteint sa limite.");
+  if(mine.rows[0].count>0) fail("Ce code promotionnel a déjà été utilisé sur votre compte.");
+  const raw=coupon.discount_type==="percent"?subtotal*Number(coupon.discount_value)/100:Number(coupon.discount_value);
+  return {coupon,discount:Math.min(subtotal,Math.max(0,Math.round(raw*100)/100))};
+}
+
+export const getMyAddresses=createServerFn({method:"GET"}).validator((data)=>data).handler(async({data})=>{
+  const user=await requireUser(data.token);
+  const r=await (await getDb()).query("select id,recipient_name,phone,address_line,department,city,area,landmark,delivery_instructions,is_default from public.addresses where user_id=$1 order by is_default desc,updated_at desc",[user.id]);
+  return r.rows;
+});
+export const saveMyAddress=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  const user=await requireUser(data.token), db=await getDb();
+  const fields=[clean(data.recipientName,160),clean(data.phone,40),clean(data.addressLine,250),clean(data.department,100)||null,clean(data.city,100),clean(data.area,100)||null,clean(data.landmark,180)||null,clean(data.instructions,500)||null];
+  if(!fields[0]||!fields[1]||!fields[2]||!fields[4]) fail("Nom, téléphone, adresse et ville sont obligatoires.");
+  const client=await db.connect();
+  try {
+    await client.query("begin");
+    if(data.addressId){
+      const own=await client.query("select id from public.addresses where id=$1 and user_id=$2 for update",[data.addressId,user.id]);
+      if(!own.rowCount) fail("Adresse introuvable.");
+    }
+    const count=await client.query("select count(*)::int count from public.addresses where user_id=$1",[user.id]);
+    const makeDefault=data.isDefault===true||count.rows[0].count===0;
+    if(makeDefault) await client.query("update public.addresses set is_default=false,updated_at=now() where user_id=$1",[user.id]);
+    let saved;
+    if(data.addressId) saved=await client.query("update public.addresses set recipient_name=$3,phone=$4,address_line=$5,department=$6,city=$7,area=$8,landmark=$9,delivery_instructions=$10,is_default=$11,updated_at=now() where id=$2 and user_id=$1 returning id",[user.id,data.addressId,...fields,makeDefault]);
+    else saved=await client.query("insert into public.addresses(user_id,recipient_name,phone,address_line,department,city,area,landmark,delivery_instructions,is_default) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id",[user.id,...fields,makeDefault]);
+    await client.query("commit");
+    return {id:saved.rows[0].id,isDefault:makeDefault};
+  } catch(e){await client.query("rollback");throw e;} finally{client.release();}
+});
+export const deleteMyAddress=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  const user=await requireUser(data.token),client=await (await getDb()).connect();
+  try{
+    await client.query("begin");
+    const removed=await client.query("delete from public.addresses where id=$1 and user_id=$2 returning is_default",[data.addressId,user.id]);
+    if(!removed.rowCount) fail("Adresse introuvable.");
+    if(removed.rows[0].is_default) await client.query("update public.addresses set is_default=true,updated_at=now() where id=(select id from public.addresses where user_id=$1 order by updated_at desc limit 1)",[user.id]);
+    await client.query("commit");return {ok:true};
+  }catch(e){await client.query("rollback");throw e;}finally{client.release();}
+});
+export const getCheckoutQuote=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  const user=await ensureCustomer(data.token),db=await getDb();
+  const cart=await db.query("select ci.quantity,p.price,p.stock,p.name from public.carts c join public.cart_items ci on ci.cart_id=c.id join public.products p on p.id=ci.product_id where c.user_id=$1 and c.status='active' and p.is_active=true and p.deleted_at is null",[user.id]);
+  if(!cart.rowCount) fail("Votre panier est vide.");
+  let subtotal=0;for(const item of cart.rows){if(Number(item.stock)<Number(item.quantity))fail("Stock insuffisant pour : "+item.name);subtotal+=Number(item.price)*Number(item.quantity);}
+  let deliveryFee=null;
+  if(clean(data.city,100)){
+    const z=await db.query("select r.fee,r.free_from from public.delivery_zones z join public.delivery_rates r on r.zone_id=z.id and r.is_active=true where z.is_active=true and lower(z.city)=lower($1) and (z.area is null or lower(z.area)=lower($2)) order by (z.area is not null) desc limit 1",[clean(data.city,100),clean(data.area,100)]);
+    if(z.rowCount) deliveryFee=z.rows[0].free_from!==null&&subtotal>=Number(z.rows[0].free_from)?0:Number(z.rows[0].fee);
+  }
+  const promo=await couponDiscount(db,data.couponCode,user.id,subtotal,false);
+  return {subtotal:Number(subtotal.toFixed(2)),deliveryFee,discount:promo.discount,total:deliveryFee===null?null:Number((subtotal+deliveryFee-promo.discount).toFixed(2)),couponCode:promo.coupon?.code??null};
+});
+export const adminListCategories=createServerFn({method:"GET"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  return (await getDb()).query("select c.slug,c.name,c.description,c.image_url,c.sort_order,c.is_active,count(p.id)::int product_count from public.categories c left join public.products p on p.category=c.slug and p.deleted_at is null group by c.slug order by c.sort_order,c.name").then(r=>r.rows);
+});
+export const adminUpsertCategory=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  const name=clean(data.name,100),slug=slugifyCategory(data.slug||name);
+  if(!name||!slug) fail("Nom et identifiant de catégorie requis.");
+  const args=[slug,name,clean(data.description,500)||null,clean(data.imageUrl,1000)||null,Math.trunc(Number(data.sortOrder)||0),data.isActive!==false];
+  const db=await getDb();
+  if(data.originalSlug){
+    const r=await db.query("update public.categories set slug=$2,name=$3,description=$4,image_url=$5,sort_order=$6,is_active=$7,updated_at=now() where slug=$1 returning slug",[clean(data.originalSlug,80),...args]);
+    if(!r.rowCount) fail("Catégorie introuvable.");return {slug:r.rows[0].slug};
+  }
+  const r=await db.query("insert into public.categories(slug,name,description,image_url,sort_order,is_active) values($1,$2,$3,$4,$5,$6) returning slug",args);
+  return {slug:r.rows[0].slug};
+});
+export const adminArchiveCategory=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);const db=await getDb();
+  const used=await db.query("select count(*)::int count from public.products where category=$1 and is_active=true and deleted_at is null",[clean(data.slug,80)]);
+  if(used.rows[0].count>0) fail("Masquez ou déplacez d'abord les produits actifs de cette catégorie.");
+  const r=await db.query("update public.categories set is_active=false,updated_at=now() where slug=$1 returning slug",[clean(data.slug,80)]);
+  if(!r.rowCount) fail("Catégorie introuvable.");return {ok:true};
+});
+export const adminListCustomers=createServerFn({method:"GET"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  const r=await (await getDb()).query(`select u.id,u.name,u.email,cp.phone,cp.preferred_name,count(o.id)::int order_count,
+    coalesce(sum(o.total) filter(where o.payment_status in ('paid','cash_collected')),0)::numeric(12,2) total_paid,max(o.created_at) last_order_at
+    from neon_auth."user" u join public.user_roles ur on ur.user_id=u.id and ur.role='customer' and ur.is_active=true
+    left join public.customer_profiles cp on cp.user_id=u.id left join public.orders o on o.customer_id=u.id
+    group by u.id,u.name,u.email,cp.phone,cp.preferred_name order by last_order_at desc nulls last,u.name limit 250`);
+  return r.rows;
+});
+export const adminListCoupons=createServerFn({method:"GET"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  const r=await (await getDb()).query("select c.id,c.code,c.discount_type,c.discount_value,c.minimum_order,c.max_uses,c.starts_at,c.ends_at,c.is_active,count(r.id)::int redeemed from public.coupons c left join public.coupon_redemptions r on r.coupon_id=c.id group by c.id order by c.created_at desc");
+  return r.rows;
+});
+export const adminUpsertCoupon=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);const db=await getDb();
+  const code=clean(data.code,64).toUpperCase().replace(/\s+/g,"");
+  const type=data.discountType==="percent"?"percent":"fixed",value=Number(data.discountValue),minimum=Math.max(0,Number(data.minimumOrder)||0);
+  const max=data.maxUses===""||data.maxUses==null?null:Math.max(1,Math.floor(Number(data.maxUses)));
+  if(!/^[A-Z0-9_-]{3,64}$/.test(code)||!Number.isFinite(value)||value<=0||(type==="percent"&&value>100)) fail("Code ou remise invalide.");
+  const start=data.startsAt?new Date(data.startsAt):null,end=data.endsAt?new Date(data.endsAt):null;
+  if((start&&Number.isNaN(start.getTime()))||(end&&Number.isNaN(end.getTime()))||(start&&end&&end<=start)) fail("Période promotionnelle invalide.");
+  const args=[code,type,value,minimum,max,start,end,data.isActive!==false];
+  if(data.couponId){const r=await db.query("update public.coupons set code=$2,discount_type=$3,discount_value=$4,minimum_order=$5,max_uses=$6,starts_at=$7,ends_at=$8,is_active=$9,updated_at=now() where id=$1 returning id",[data.couponId,...args]);if(!r.rowCount)fail("Code introuvable.");return {id:r.rows[0].id};}
+  const r=await db.query("insert into public.coupons(code,discount_type,discount_value,minimum_order,max_uses,starts_at,ends_at,is_active) values($1,$2,$3,$4,$5,$6,$7,$8) returning id",args);return {id:r.rows[0].id};
+});
+export const adminArchiveCoupon=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);const r=await (await getDb()).query("update public.coupons set is_active=false,updated_at=now() where id=$1 returning id",[data.couponId]);if(!r.rowCount)fail("Code introuvable.");return {ok:true};
+});
