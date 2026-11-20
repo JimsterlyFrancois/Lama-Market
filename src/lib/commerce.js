@@ -188,7 +188,9 @@ export const getMyOrders = createServerFn({ method: "GET" }).validator((data) =>
   const result = await db.query(
     `select o.id,o.order_number,o.status,o.payment_status,o.delivery_status,o.subtotal,o.discount_total,o.delivery_fee,o.total,o.currency,o.address_snapshot,o.customer_note,o.created_at,
       coalesce((select json_agg(json_build_object('name',oi.product_name,'sku',oi.product_sku,'quantity',oi.quantity,'price',oi.unit_price,'lineTotal',oi.line_total) order by oi.created_at) from public.order_items oi where oi.order_id=o.id),'[]') items,
-      coalesce((select json_agg(json_build_object('status',h.new_status,'note',h.note,'createdAt',h.created_at) order by h.created_at) from public.order_status_history h where h.order_id=o.id),'[]') history
+      coalesce((select json_agg(json_build_object('status',h.new_status,'note',h.note,'createdAt',h.created_at) order by h.created_at) from public.order_status_history h where h.order_id=o.id),'[]') history,
+      coalesce((select json_agg(json_build_object('method',p.method,'provider',p.provider,'amount',p.amount,'status',p.status,'externalReference',p.external_reference,'paidAt',p.paid_at) order by p.created_at desc) from public.payments p where p.order_id=o.id),'[]') payments,
+      coalesce((select json_agg(json_build_object('id',r.id,'amount',r.amount,'status',r.status,'reason',r.reason,'externalReference',r.external_reference,'proofStorageKey',r.proof_storage_key,'createdAt',r.created_at,'processedAt',r.processed_at) order by r.created_at desc) from public.payment_refunds r where r.order_id=o.id),'[]') refunds
      from public.orders o where o.customer_id=$1 order by o.created_at desc`,
     [user.id],
   );
@@ -333,7 +335,7 @@ export const courierUpdateDelivery = createServerFn({ method: "POST" }).validato
 export const getMyNotifications = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   const user=await requireUser(data.token);
   const db=await getDb();
-  const result=await db.query("select id,type,title,message,data,read_at,created_at from public.notifications where user_id=$1 order by created_at desc limit 50",[user.id]);
+  const result=await db.query("select n.id,n.type,n.title,n.message,n.data,n.read_at,n.created_at,d.status email_status,d.error_message email_error from public.notifications n left join public.notification_deliveries d on d.notification_id=n.id and d.channel='email' where n.user_id=$1 order by n.created_at desc limit 50",[user.id]);
   return result.rows;
 });
 
