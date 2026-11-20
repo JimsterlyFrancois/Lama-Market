@@ -13,3 +13,17 @@ export async function getAccessToken() {
   if (error || !data?.token) throw new Error(error?.message || "Session expirée. Reconnectez-vous.");
   return data.token;
 }
+
+
+// Neon Auth exposes its managed email-OTP endpoints through the Better Auth client.
+const managedClient = authClient;
+export const emailOtp = managedClient ? {
+  sendVerificationOtp: (email, type) =>
+    managedClient.emailOtp.sendVerificationOtp({ email, type }),
+  verifyEmail: (email, otp) =>
+    managedClient.emailOtp.verifyEmail({ email, otp }),
+  forgetPassword: (email) =>
+    managedClient.forgetPassword.emailOtp({ email }),
+  resetPassword: (email, otp, password) =>
+    managedClient.emailOtp.resetPassword({ email, otp, password }),
+} : null;
