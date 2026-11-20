@@ -117,3 +117,28 @@ export async function createDeliveryProofDownload({ key }) {
   });
   return getSignedUrl(client, new GetObjectCommand({ Bucket: "uploads", Key: key }), { expiresIn: 300 });
 }
+
+
+/** Private evidence for a refund that has been processed outside the storefront. */
+export async function createRefundProofUpload({ contentType, size }) {
+  const extension = new Map([["image/jpeg","jpg"],["image/png","png"],["image/webp","webp"],["application/pdf","pdf"]]).get(contentType);
+  if (!extension) throw new Error("Justificatif accepté : JPG, PNG, WebP ou PDF.");
+  if (!Number.isFinite(size) || size < 1 || size > 8 * 1024 * 1024) throw new Error("Le justificatif doit peser 8 Mo maximum.");
+  const endpoint = process.env.AWS_ENDPOINT_URL_S3;
+  const region = process.env.AWS_REGION || "us-east-2";
+  if (!endpoint || !process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) throw new Error("Le stockage privé Neon n'est pas configuré.");
+  const key = `refund-proofs/${crypto.randomUUID()}.${extension}`;
+  const client = new S3Client({ region, endpoint, forcePathStyle: true, credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY } });
+  const command = new PutObjectCommand({ Bucket: "uploads", Key: key, ContentType: contentType, CacheControl: "private, max-age=0" });
+  const uploadUrl = await getSignedUrl(client, command, { expiresIn: 300 });
+  return { key, uploadUrl, headers: { "Content-Type": contentType } };
+}
+
+export async function createRefundProofDownload({ key }) {
+  const endpoint = process.env.AWS_ENDPOINT_URL_S3;
+  const region = process.env.AWS_REGION || "us-east-2";
+  if (!endpoint || !process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) throw new Error("Le stockage privé Neon n'est pas configuré.");
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = new S3Client({ region, endpoint, forcePathStyle: true, credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY } });
+  return getSignedUrl(client, new GetObjectCommand({ Bucket: "uploads", Key: key }), { expiresIn: 300 });
+}
