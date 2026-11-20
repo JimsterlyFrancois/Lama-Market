@@ -103,7 +103,10 @@ export const removeCartItem = createServerFn({ method: "POST" }).validator((data
 
 export const checkout = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const user = await ensureCustomer(data.token);
-  if (data.paymentMethod !== "cash_on_delivery") fail("Seul le paiement à la livraison est actuellement activé.");
+  const paymentMethod = ["cash_on_delivery","moncash","natcash"].includes(data.paymentMethod) ? data.paymentMethod : "cash_on_delivery";
+  const onlinePayment = paymentMethod === "moncash" || paymentMethod === "natcash";
+  const paymentAvailability = await (await import("./payments.server")).getPaymentAvailability();
+  if (onlinePayment && !paymentAvailability[paymentMethod]) fail("Ce moyen de paiement n'est pas encore activé. Choisissez le paiement à la livraison.");
   const db = await getDb();
   await releaseExpiredStockReservations(db);
   let address = data.address || {};
@@ -148,9 +151,11 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
       area: clean(address.area,100), landmark: clean(address.landmark,180),
       instructions: clean(address.instructions,500),
     };
+    const initialOrderStatus = onlinePayment ? "pending" : "confirmed";
+    const initialPaymentStatus = onlinePayment ? "pending" : "cash_due";
     const order = await client.query(
-      "insert into public.orders(order_number,customer_id,status,payment_status,delivery_status,subtotal,discount_total,delivery_fee,total,address_snapshot,customer_note,idempotency_key,confirmed_at) values($1,$2,'confirmed','cash_due','unassigned',$3,$4,$5,$6,$7,$8,$9,now()) returning id",
-      [orderNumber,user.id,subtotal,promotion.discount,deliveryFee,total,snapshot,clean(data.note,500)||null,idem],
+      "insert into public.orders(order_number,customer_id,status,payment_status,delivery_status,subtotal,discount_total,delivery_fee,total,address_snapshot,customer_note,idempotency_key,confirmed_at) values($1,$2,$3,$4,'unassigned',$5,$6,$7,$8,$9,$10,$11,$12) returning id",
+      [orderNumber,user.id,initialOrderStatus,initialPaymentStatus,subtotal,promotion.discount,deliveryFee,total,snapshot,clean(data.note,500)||null,idem,onlinePayment?null:new Date()],
     );
     if (promotion.coupon) {
       await client.query("insert into public.coupon_redemptions(coupon_id,order_id,customer_id,discount_amount) values($1,$2,$3,$4)", [promotion.coupon.id,order.rows[0].id,user.id,promotion.discount]);
@@ -159,17 +164,18 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
       const changed = await client.query("update public.products set stock=stock-$2,updated_at=now() where id=$1 and stock >= $2 returning id", [item.product_id,item.quantity]);
       if (!changed.rowCount) fail("Le stock a changé. Actualisez votre panier.");
       const line = await client.query("insert into public.order_items(order_id,product_id,product_name,product_sku,unit_price,quantity,line_total) values($1,$2,$3,$4,$5,$6,$7) returning id", [order.rows[0].id,item.product_id,item.name,item.sku,item.price,item.quantity,Number(item.price)*item.quantity]);
-      await client.query("insert into public.stock_reservations(order_item_id,product_id,quantity,status,expires_at) values($1,$2,$3,'reserved',now()+interval '48 hours')", [line.rows[0].id,item.product_id,item.quantity]);
+      await client.query("insert into public.stock_reservations(order_item_id,product_id,quantity,status,expires_at) values($1,$2,$3,'reserved',now()+case when $4 then interval '20 minutes' else interval '48 hours' end)", [line.rows[0].id,item.product_id,item.quantity,onlinePayment]);
       await client.query("insert into public.stock_movements(product_id,quantity_delta,movement_type,reference_type,reference_id,note,created_by) values($1,$2,'sale','order',$3,'Réservation au checkout',$4)", [item.product_id,-item.quantity,order.rows[0].id,user.id]);
     }
-    await client.query("insert into public.payments(order_id,method,amount,status,idempotency_key) values($1,'cash_on_delivery',$2,'pending',$3)", [order.rows[0].id,total,"pay-"+idem]);
+    await client.query("insert into public.payments(order_id,method,amount,status,idempotency_key,provider) values($1,$2,$3,'pending',$4,$5)", [order.rows[0].id,paymentMethod,total,"pay-"+idem,onlinePayment?"tranzak":null]);
     await client.query("insert into public.deliveries(order_id,zone_id,fee,status) values($1,$2,$3,'unassigned')", [order.rows[0].id,zone.rows[0].id,deliveryFee]);
-    await client.query("insert into public.order_status_history(order_id,new_status,note,actor_id) values($1,'confirmed','Commande créée par le client',$2)", [order.rows[0].id,user.id]);
-    await client.query("insert into public.notifications(user_id,type,title,message,data) values($1,'order_created','Commande reçue',$2,$3)", [user.id,"Votre commande "+orderNumber+" a été enregistrée.",{orderId:order.rows[0].id,orderNumber}]);
+    await client.query("insert into public.order_status_history(order_id,new_status,note,actor_id) values($1,$2,$3,$4)", [order.rows[0].id,initialOrderStatus,onlinePayment?"Commande créée, paiement en attente":"Commande créée par le client",user.id]);
+    const notification=await client.query("insert into public.notifications(user_id,type,title,message,data) values($1,'order_created',$2,$3,$4) returning id", [user.id,"Commande reçue","Votre commande "+orderNumber+" a été enregistrée.",{orderId:order.rows[0].id,orderNumber,paymentMethod}]);
     await client.query("delete from public.cart_items where cart_id=$1", [cart.rows[0].id]);
     await client.query("update public.carts set status='converted',updated_at=now() where id=$1", [cart.rows[0].id]);
     await client.query("commit");
-    return { id: order.rows[0].id, orderNumber };
+    await (await import("./notifications.server")).deliverNotificationEmail(db, notification.rows[0].id);
+    return { id: order.rows[0].id, orderNumber, paymentMethod, paymentRequired: onlinePayment };
   } catch (error) {
     await client.query("rollback");
     throw error;
@@ -767,7 +773,7 @@ async function releaseExpiredStockReservations(db, actorId=null) {
     await client.query("begin");
     const rows=await client.query(`select sr.id reservation_id,sr.product_id,sr.quantity,oi.order_id,o.customer_id,o.order_number,o.status previous_status
       from public.stock_reservations sr join public.order_items oi on oi.id=sr.order_item_id join public.orders o on o.id=oi.order_id
-      where sr.status='reserved' and sr.expires_at<=now() and o.status in ('pending','confirmed') and o.delivery_status='unassigned'
+      where sr.status='reserved' and sr.expires_at<=now() and o.status in ('pending','confirmed') and o.delivery_status='unassigned' and o.payment_status not in ('paid','cash_collected','refunded','partially_refunded')
       for update of sr,o skip locked`);
     for(const row of rows.rows){
       await client.query("update public.products set stock=stock+$2,updated_at=now() where id=$1",[row.product_id,row.quantity]);
@@ -847,4 +853,19 @@ export const adminArchiveDeliveryZone=createServerFn({method:"POST"}).validator(
     await client.query("update public.delivery_rates set is_active=false,updated_at=now() where zone_id=$1",[data.zoneId]);
     await client.query("commit");return {ok:true};
   }catch(error){await client.query("rollback");throw error;}finally{client.release();}
+});
+
+
+export const getPaymentOptions=createServerFn({method:"GET"}).handler(async()=>{
+  return (await import("./payments.server")).getPaymentAvailability();
+});
+
+export const startOrderPayment=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  const user=await requireUser(data.token);
+  return (await import("./payments.server")).startTranzakPayment({orderId:data.orderId,userId:user.id});
+});
+
+export const refreshOrderPayment=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  const user=await requireUser(data.token);
+  return (await import("./payments.server")).reconcileTranzakPayment({orderId:data.orderId,userId:user.id});
 });
