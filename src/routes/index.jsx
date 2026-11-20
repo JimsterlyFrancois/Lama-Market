@@ -4,7 +4,7 @@ import {
   Search, ShoppingBasket, Leaf, Truck, ShieldCheck, Clock3,
   ChevronRight, SlidersHorizontal, PackageSearch, RefreshCw,
 } from "lucide-react";
-import { getCatalog, addCartItem } from "../lib/commerce";
+import { getCatalog, addCartItem, getStorefrontSettings } from "../lib/commerce";
 import { authClient, getAccessToken } from "../lib/auth-client";
 
 export const Route = createFileRoute("/")({
@@ -34,6 +34,7 @@ function formatPrice(value) {
 
 function HomePage() {
   const [products, setProducts] = useState([]);
+  const [coverUrl, setCoverUrl] = useState("/images/lama-market-cover.webp");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -44,8 +45,9 @@ function HomePage() {
     setLoading(true);
     setError("");
     try {
-      const result = await getCatalog();
+      const [result, appearance] = await Promise.all([getCatalog(), getStorefrontSettings()]);
       setProducts(result.products ?? []);
+      setCoverUrl(appearance.heroCoverUrl || "/images/lama-market-cover.webp");
     } catch (loadError) {
       setError(loadError?.message || "Impossible de charger le catalogue pour le moment.");
       setProducts([]);
@@ -106,7 +108,7 @@ function HomePage() {
         <div className="hero-art hero-cover-art">
           <img
             className="hero-cover-image"
-            src="/images/lama-market-cover.webp"
+            src={coverUrl}
             alt="Une cliente découvre les produits et les rayons de Lama Market"
             width="384"
             height="384"
