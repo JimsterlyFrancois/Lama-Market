@@ -197,7 +197,13 @@ export const getAdminDashboard = createServerFn({ method: "GET" }).validator((da
     db.query("select up.user_id,up.display_name,up.phone,up.employment_type,up.is_active from public.courier_profiles up order by up.display_name"),
     db.query("select p.id,p.name,p.description,p.category,p.price,p.old_price,p.discount_ends_at,p.stock,p.is_active,p.image_url,p.sku,p.slug,p.low_stock_threshold,coalesce((select json_agg(json_build_object('id',pi.id,'storage_key',pi.storage_key,'alt_text',pi.alt_text,'is_primary',pi.is_primary,'sort_order',pi.sort_order) order by pi.is_primary desc,pi.sort_order,pi.created_at) from public.product_images pi where pi.product_id=p.id),'[]'::json) images from public.products p where p.deleted_at is null order by p.created_at desc limit 100"),
   ]);
-  return { stats: stats.rows[0], orders: orders.rows, lowStock: lowStock.rows, couriers: couriers.rows, products: products.rows };
+  const endpoint=process.env.AWS_ENDPOINT_URL_S3?.replace(/\/$/,"");
+  const imageBase=endpoint?`${endpoint}/product-images/`:"";
+  const productRows=products.rows.map(product=>({
+    ...product,
+    images:(product.images||[]).map(image=>({...image,url:imageBase&&image.storage_key?imageBase+image.storage_key:null})),
+  }));
+  return { stats: stats.rows[0], orders: orders.rows, lowStock: lowStock.rows, couriers: couriers.rows, products: productRows };
 });
 
 export const adminCreateProduct = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
@@ -205,7 +211,13 @@ export const adminCreateProduct = createServerFn({ method: "POST" }).validator((
   const name = clean(data.name,180), category = clean(data.category,80), price = Number(data.price), stock = Math.max(0,Math.floor(Number(data.stock)||0));
   if (!name || !category || !Number.isFinite(price) || price < 0) fail("Nom, catégorie et prix valides requis.");
   const db = await getDb();
-  const result = await db.query("insert into public.products(name,description,category,price,old_price,stock,image_url,is_active,sku,low_stock_threshold,sort_order) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0) returning id", [name,clean(data.description,2000)||null,category,price,data.oldPrice?Number(data.oldPrice):null,stock,clean(data.imageUrl,1000)||null,data.isActive===true,clean(data.sku,80)||null,Math.max(0,Number(data.lowStockThreshold)||5)]);
+  const oldPrice=data.oldPrice===""||data.oldPrice==null?null:Number(data.oldPrice);
+  const discountEndsAt=data.discountEndsAt?new Date(data.discountEndsAt):null;
+  if(oldPrice!==null&&(!Number.isFinite(oldPrice)||oldPrice<=price))fail("Le prix normal doit être supérieur au prix promotionnel.");
+  if(discountEndsAt&&Number.isNaN(discountEndsAt.getTime()))fail("Date de fin promotionnelle invalide.");
+  const categoryRow=await db.query("select slug from public.categories where slug=$1 and is_active=true",[category]);
+  if(!categoryRow.rowCount)fail("Sélectionnez une catégorie active.");
+  const result = await db.query("insert into public.products(name,description,category,price,old_price,discount_ends_at,stock,image_url,is_active,sku,low_stock_threshold,sort_order) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0) returning id", [name,clean(data.description,2000)||null,category,price,oldPrice,discountEndsAt,stock,clean(data.imageUrl,1000)||null,data.isActive===true,clean(data.sku,80)||null,Math.max(0,Number(data.lowStockThreshold)||5)]);
   if (stock > 0) await db.query("insert into public.stock_movements(product_id,quantity_delta,movement_type,note,created_by) values($1,$2,'initial','Stock initial',$3)",[result.rows[0].id,stock,admin.id]);
   if (data.imageKey) await db.query("insert into public.product_images(product_id,storage_key,alt_text,is_primary) values($1,$2,$3,true)",[result.rows[0].id,clean(data.imageKey,1024),name]);
   return { id: result.rows[0].id };
