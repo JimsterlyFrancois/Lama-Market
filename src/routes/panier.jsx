@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { getAccessToken } from "../lib/auth-client";
-import { getMyCart, getMyAddresses, getCheckoutQuote, updateCartItem, removeCartItem, checkout } from "../lib/commerce";
+import { getMyCart, getMyAddresses, getCheckoutQuote, getPaymentOptions, startOrderPayment, updateCartItem, removeCartItem, checkout } from "../lib/commerce";
 
 export const Route = createFileRoute("/panier")({ component: CartPage });
 const money = new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
@@ -15,6 +15,8 @@ function CartPage(){
   const [couponCode,setCouponCode]=useState("");
   const [quote,setQuote]=useState(null);
   const [quoteMessage,setQuoteMessage]=useState("");
+  const [paymentOptions,setPaymentOptions]=useState({cash_on_delivery:true,moncash:false,natcash:false,provider:null});
+  const [paymentMethod,setPaymentMethod]=useState("cash_on_delivery");
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState("");
@@ -22,7 +24,7 @@ function CartPage(){
   const total=useMemo(()=>items.reduce((sum,item)=>sum+Number(item.price)*item.quantity,0),[items]);
   async function load(){
     setLoading(true);setMessage("");
-    try{const token=await getAccessToken();const [cartRows,savedAddresses]=await Promise.all([getMyCart({data:{token}}),getMyAddresses({data:{token}})]);setItems(cartRows);setAddresses(savedAddresses);const primary=savedAddresses.find(a=>a.is_default);if(primary&&!addressInitialized){setAddressId(primary.id);setAddress({recipientName:primary.recipient_name,phone:primary.phone,addressLine:primary.address_line,city:primary.city,area:primary.area||"",landmark:primary.landmark||"",instructions:primary.delivery_instructions||""});}setAddressInitialized(true);}
+    try{const token=await getAccessToken();const [cartRows,savedAddresses,methods]=await Promise.all([getMyCart({data:{token}}),getMyAddresses({data:{token}}),getPaymentOptions()]);setItems(cartRows);setAddresses(savedAddresses);setPaymentOptions(methods);const primary=savedAddresses.find(a=>a.is_default);if(primary&&!addressInitialized){setAddressId(primary.id);setAddress({recipientName:primary.recipient_name,phone:primary.phone,addressLine:primary.address_line,city:primary.city,area:primary.area||"",landmark:primary.landmark||"",instructions:primary.delivery_instructions||""});}setAddressInitialized(true);}
     catch(e){setMessage(e.message||"Connectez-vous pour consulter votre panier.");}
     finally{setLoading(false);}
   }
@@ -50,7 +52,13 @@ function CartPage(){
     event.preventDefault();setBusy(true);setMessage("");
     try{
       const token=await getAccessToken();
-      const result=await checkout({data:{token,address,addressId:addressId||undefined,couponCode,paymentMethod:"cash_on_delivery",idempotencyKey:idempotencyKey.current}});
+      const result=await checkout({data:{token,address,addressId:addressId||undefined,couponCode,paymentMethod,idempotencyKey:idempotencyKey.current}});
+      if(result.paymentRequired){
+        const payment=await startOrderPayment({data:{token,orderId:result.id}});
+        if(payment.paymentUrl){window.location.assign(payment.paymentUrl);return;}
+        window.location.assign("/paiement?orderId="+encodeURIComponent(result.id)+"&orderNumber="+encodeURIComponent(result.orderNumber));
+        return;
+      }
       navigate({to:"/commandes",search:{newOrder:result.orderNumber}});
     }catch(e){setMessage(e.message||"Impossible de valider la commande.");}
     finally{setBusy(false);}
@@ -80,7 +88,13 @@ function CartPage(){
               <label>Quartier / zone<input value={address.area} onChange={e=>editAddress("area",e.target.value)}/></label>
               <label>Repère (facultatif)<input value={address.landmark} onChange={e=>editAddress("landmark",e.target.value)}/></label>
               <label>Instructions (facultatif)<textarea value={address.instructions} onChange={e=>editAddress("instructions",e.target.value)}/></label>
-              <div className="payment-choice"><strong>Paiement à la livraison</strong><span>Vous réglez votre commande au livreur lors de la réception.</span></div>
+              <fieldset className="payment-methods">
+                <legend>Choisir un moyen de paiement</legend>
+                <label className="payment-method-option"><input type="radio" name="paymentMethod" value="cash_on_delivery" checked={paymentMethod==="cash_on_delivery"} onChange={()=>setPaymentMethod("cash_on_delivery")}/><span><strong>Paiement à la livraison</strong><small>Réglez le livreur à la réception.</small></span></label>
+                <label className={"payment-method-option "+(!paymentOptions.moncash?"is-disabled":"")}><input type="radio" name="paymentMethod" value="moncash" checked={paymentMethod==="moncash"} disabled={!paymentOptions.moncash} onChange={()=>setPaymentMethod("moncash")}/><span><strong>MonCash</strong><small>{paymentOptions.moncash?"Paiement sécurisé via la passerelle de paiement.":"En attente de l'activation du compte marchand."}</small></span></label>
+                <label className={"payment-method-option "+(!paymentOptions.natcash?"is-disabled":"")}><input type="radio" name="paymentMethod" value="natcash" checked={paymentMethod==="natcash"} disabled={!paymentOptions.natcash} onChange={()=>setPaymentMethod("natcash")}/><span><strong>NatCash</strong><small>{paymentOptions.natcash?"Paiement sécurisé via la passerelle de paiement.":"En attente de l'activation du compte marchand."}</small></span></label>
+                {!paymentOptions.moncash&&!paymentOptions.natcash&&<small className="payment-provider-note">MonCash et NatCash seront activés après l'ajout des clés API marchandes de test et du secret webhook.</small>}
+              </fieldset>
               <label>Code promotionnel (facultatif)<input value={couponCode} onChange={e=>{setCouponCode(e.target.value.toUpperCase());setQuote(null);}} placeholder="Ex. LAMA10"/></label>
               <button type="button" className="text-button" onClick={calculateQuote}>Calculer la livraison et la remise</button>
               <div className="cart-total"><span>Sous-total</span><strong>{money.format(total)}</strong></div>
