@@ -166,3 +166,17 @@ html[data-theme="dark"] .cart-item,html[data-theme="dark"] .notification-row,htm
 html[data-theme="dark"] .global-theme-toggle{background:#203429;color:#e5eee7;border-color:#45604c;box-shadow:0 8px 28px rgba(0,0,0,.4)}
 html[data-theme="dark"] .hero-image-tag{background:rgba(17,29,22,.9);color:#e3efe5}
 @media(prefers-reduced-motion:reduce){.global-theme-toggle{transition:none}}
+
+
+/* Administrator cover uploader */
+.admin-cover-panel{margin-bottom:22px}
+.admin-cover-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.admin-cover-heading h2{margin:0 0 6px}
+.admin-cover-heading p{margin:0 0 14px;color:#66756a;font-size:13px;line-height:1.55}
+.cover-current-label{flex:none;border-radius:999px;padding:7px 11px;background:#e7f3eb;color:#176b45;font-size:11px;font-weight:800}
+.admin-cover-preview{display:block;width:min(100%,440px);max-height:220px;object-fit:cover;border-radius:16px;margin:10px 0 16px;border:1px solid #dce5dd}
+.admin-cover-panel input[type=file]{display:block;width:100%;margin-top:7px;padding:12px;border:1px dashed #aab9ae;border-radius:12px;background:#f7faf7;color:inherit}
+html[data-theme="dark"] .admin-cover-heading p{color:#a0b2a4}
+html[data-theme="dark"] .cover-current-label{background:#263b2d;color:#c2dc9b}
+html[data-theme="dark"] .admin-cover-preview{border-color:#344b39}
+html[data-theme="dark"] .admin-cover-panel input[type=file]{background:#101914;border-color:#45604c;color:#e5eee7}
