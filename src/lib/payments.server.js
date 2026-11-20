@@ -196,12 +196,12 @@ async function applyTranzakPaymentState(db, data, eventName, signatureValid, raw
   if (!["completed", "failed"].includes(data.status)) {
     return { processed: false, status: data.status || "unknown" };
   }
-  const paymentEventId = signatureValid
-    ? tranzakEventKey(eventName, transactionId)
-    : tranzakEventKey("reconcile:" + data.status, transactionId);
+  const canonicalEvent = data.status === "completed" ? "payment.success" : data.status === "failed" ? "payment.failed" : eventName;
+  const paymentEventId = tranzakEventKey(canonicalEvent, transactionId);
 
   const client = await db.connect();
   let notification = null;
+  let adminNotification = null;
   let result;
   try {
     await client.query("begin");
@@ -251,29 +251,52 @@ async function applyTranzakPaymentState(db, data, eventName, signatureValid, raw
         "update public.payments set status='paid',paid_at=coalesce(paid_at,now()),updated_at=now() where id=$1 and status in ('pending','failed')",
         [row.payment_id],
       );
-      await client.query(
-        `update public.orders set payment_status='paid',
-          status=case when status='pending' then 'confirmed' else status end,
-          confirmed_at=coalesce(confirmed_at,now()),updated_at=now()
-         where id=$1 and payment_status not in ('paid','cash_collected','refunded','partially_refunded')`,
-        [row.order_id],
-      );
-      await client.query(
-        "update public.stock_reservations set expires_at=now()+interval '48 hours' where order_item_id in(select id from public.order_items where order_id=$1) and status='reserved'",
-        [row.order_id],
-      );
-      await client.query(
-        "insert into public.order_status_history(order_id,previous_status,new_status,note) values($1,$2,'confirmed','Paiement Tranzak confirmé par vérification serveur')",
-        [row.order_id, row.order_status],
-      );
-      notification = {
-        userId: row.customer_id,
-        type: "payment_success",
-        title: "Paiement confirmé",
-        message: "Le paiement de la commande " + row.order_number + " a été confirmé.",
-        data: { orderId: row.order_id, orderNumber: row.order_number, transactionId },
-      };
-      result = { processed: true, status: "paid", orderId: row.order_id };
+      if (row.order_status === "cancelled" || row.payment_state === "failed") {
+        // A late wallet confirmation must never resurrect a cancelled order or consume stock that was already released.
+        await client.query("update public.orders set payment_status='paid',updated_at=now() where id=$1", [row.order_id]);
+        await client.query(
+          "insert into public.audit_logs(action,entity_type,entity_id,details) values('late_payment_after_cancellation','order',$1,$2)",
+          [row.order_id,{transactionId,orderNumber:row.order_number,amount:row.total}],
+        );
+        notification = {
+          userId: row.customer_id,
+          type: "payment_received_after_cancellation",
+          title: "Paiement reçu après l'annulation",
+          message: "Un paiement de la commande " + row.order_number + " a été confirmé après l'annulation de la commande. Lama Market doit vérifier le remboursement avant toute nouvelle livraison.",
+          data: { orderId: row.order_id, orderNumber: row.order_number, transactionId, actionRequired: "contact_support" },
+        };
+        adminNotification = {
+          type: "late_payment_after_cancellation",
+          title: "Paiement tardif à rembourser",
+          message: "La commande annulée " + row.order_number + " a été payée après la libération du stock. Vérifiez le débit et traitez le remboursement.",
+          data: { orderId: row.order_id, orderNumber: row.order_number, transactionId, amount: row.total },
+        };
+        result = { processed: true, status: "paid_after_cancellation", orderId: row.order_id };
+      } else {
+        await client.query(
+          `update public.orders set payment_status='paid',
+            status=case when status='pending' then 'confirmed' else status end,
+            confirmed_at=coalesce(confirmed_at,now()),updated_at=now()
+           where id=$1 and payment_status not in ('paid','cash_collected','refunded','partially_refunded')`,
+          [row.order_id],
+        );
+        await client.query(
+          "update public.stock_reservations set expires_at=now()+interval '48 hours' where order_item_id in(select id from public.order_items where order_id=$1) and status='reserved'",
+          [row.order_id],
+        );
+        await client.query(
+          "insert into public.order_status_history(order_id,previous_status,new_status,note) values($1,$2,'confirmed','Paiement Tranzak confirmé par vérification serveur')",
+          [row.order_id, row.order_status],
+        );
+        notification = {
+          userId: row.customer_id,
+          type: "payment_success",
+          title: "Paiement confirmé",
+          message: "Le paiement de la commande " + row.order_number + " a été confirmé.",
+          data: { orderId: row.order_id, orderNumber: row.order_number, transactionId },
+        };
+        result = { processed: true, status: "paid", orderId: row.order_id };
+      }
     } else if (data.status === "failed" && !finalPaymentStates.has(row.payment_state)) {
       await client.query("update public.payments set status='failed',updated_at=now() where id=$1 and status='pending'", [row.payment_id]);
       await client.query(
@@ -289,6 +312,12 @@ async function applyTranzakPaymentState(db, data, eventName, signatureValid, raw
         title: "Paiement non confirmé",
         message: "Le paiement de la commande " + row.order_number + " n'a pas été confirmé. Votre commande a été annulée.",
         data: { orderId: row.order_id, orderNumber: row.order_number, transactionId },
+      };
+      adminNotification = {
+        type: "payment_failed",
+        title: "Échec d'un paiement mobile",
+        message: "Le paiement de la commande "+row.order_number+" a échoué et le stock a été libéré.",
+        data: {orderId:row.order_id,orderNumber:row.order_number,transactionId},
       };
       result = { processed: true, status: "failed", orderId: row.order_id };
     } else {
@@ -307,6 +336,10 @@ async function applyTranzakPaymentState(db, data, eventName, signatureValid, raw
   }
 
   if (notification) await createNotification(db, notification);
+  if (adminNotification) {
+    const { createAdminNotification } = await import("./notifications.server");
+    await createAdminNotification(db, adminNotification);
+  }
   return result;
 }
 
