@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { Moon, Sun } from "lucide-react";
 import appCss from "../styles/app.css?url";
+import AccountMenu from "../components/site/AccountMenu";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -43,7 +44,7 @@ function RootDocument() {
       </head>
       <body>
         <Outlet />
-        <GlobalThemeToggle />
+        <div className="global-floating-actions"><AccountMenu /><GlobalThemeToggle /></div>
         <Scripts />
       </body>
     </html>
