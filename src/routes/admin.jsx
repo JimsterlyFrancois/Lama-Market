@@ -9,7 +9,8 @@ import {
  adminListStaff,adminAddStaff,adminUpdateStaff,
  adminListCoupons,adminUpsertCoupon,adminArchiveCoupon,adminAddProductImage,
  adminSetPrimaryProductImage,adminDeleteProductImage,adminGetProductStockHistory,
- adminReleaseExpiredReservations,
+ adminReleaseExpiredReservations,adminListPayments,adminCreateRefund,adminUpdateRefund,
+ getRefundProofUploadUrl,getRefundProofDownloadUrl,adminListNotifications,
 } from "../lib/commerce";
 export const Route=createFileRoute("/admin")({component:AdminPage});
 const money=new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
@@ -23,6 +24,7 @@ const emptyCoupon={code:"",discountType:"percent",discountValue:"10",minimumOrde
 function AdminPage(){
  const [data,setData]=useState(null),[deliveries,setDeliveries]=useState([]),[reports,setReports]=useState(null),[deliveryZones,setDeliveryZones]=useState([]),[editingZoneId,setEditingZoneId]=useState("");
  const [categories,setCategories]=useState([]),[customers,setCustomers]=useState([]),[coupons,setCoupons]=useState([]),[staff,setStaff]=useState([]);
+ const [payments,setPayments]=useState([]),[adminNotifications,setAdminNotifications]=useState([]);
  const [newStaff,setNewStaff]=useState(emptyStaff);
  const [message,setMessage]=useState("Chargement du tableau de bord…"),[busy,setBusy]=useState(false),[coverUrl,setCoverUrl]=useState("");
  const [product,setProduct]=useState(emptyProduct),[zone,setZone]=useState(emptyZone),[courier,setCourier]=useState(emptyCourier);
@@ -33,12 +35,12 @@ function AdminPage(){
  async function load(){
   try{
    const token=await getAccessToken();
-   const [d,l,r,appearance,cats,people,promos,team,zones]=await Promise.all([
+   const [d,l,r,appearance,cats,people,promos,team,zones,paymentRows,alerts]=await Promise.all([
     getAdminDashboard({data:{token}}),getAdminDeliveries({data:{token}}),getAdminReports({data:{token}}),
-    getStorefrontSettings(),adminListCategories({data:{token}}),adminListCustomers({data:{token}}),adminListCoupons({data:{token}}),adminListStaff({data:{token}}),adminListDeliveryZones({data:{token}}),
+    getStorefrontSettings(),adminListCategories({data:{token}}),adminListCustomers({data:{token}}),adminListCoupons({data:{token}}),adminListStaff({data:{token}}),adminListDeliveryZones({data:{token}}),adminListPayments({data:{token}}),adminListNotifications({data:{token}}),
    ]);
    setData(d);setDeliveries(l);setReports(r);setCoverUrl(appearance.heroCoverUrl||"");
-   setCategories(cats);setCustomers(people);setCoupons(promos);setStaff(team);setDeliveryZones(zones);setMessage("");
+   setCategories(cats);setCustomers(people);setCoupons(promos);setStaff(team);setDeliveryZones(zones);setPayments(paymentRows);setAdminNotifications(alerts);setMessage("");
   }catch(e){setMessage(e.message||"Impossible de charger l'administration.");}
  }
  useEffect(()=>{load();},[]);
@@ -125,6 +127,32 @@ function AdminPage(){
  async function saveCoupon(e){
   e.preventDefault();const ok=await act(adminUpsertCoupon,{...coupon,couponId:editingCoupon||undefined,discountValue:Number(coupon.discountValue),minimumOrder:Number(coupon.minimumOrder),maxUses:coupon.maxUses===""?null:Number(coupon.maxUses),startsAt:coupon.startsAt||null,endsAt:coupon.endsAt||null},"Promotion enregistrée.");
   if(ok){setCoupon(emptyCoupon);setEditingCoupon("");}
+ }
+ async function requestRefund(paymentId,amount,reason){
+  return act(adminCreateRefund,{paymentId,amount:Number(amount),reason,idempotencyKey:crypto.randomUUID()},"Demande de remboursement enregistrée. Son paiement reste à effectuer manuellement.");
+ }
+ async function updateRefund(refundId,status,externalReference,proofStorageKey){
+  return act(adminUpdateRefund,{refundId,status,externalReference,proofStorageKey},"Statut du remboursement enregistré.");
+ }
+ async function uploadRefundProof(refundId,file){
+  if(!file)throw new Error("Sélectionnez un justificatif.");
+  const token=await getAccessToken();
+  const signed=await getRefundProofUploadUrl({data:{token,refundId,contentType:file.type,size:file.size}});
+  const response=await fetch(signed.uploadUrl,{method:"PUT",headers:signed.headers,body:file});
+  if(!response.ok)throw new Error("L'envoi du justificatif a échoué.");
+  return signed.key;
+ }
+ async function viewRefundProof(refundId){
+  const token=await getAccessToken();
+  const result=await getRefundProofDownloadUrl({data:{token,refundId}});
+  window.open(result.url,"_blank","noopener,noreferrer");
+ }
+ function exportCsv(filename,rows,columns){
+  const quote=value=>'"'+String(value??"").replace(/"/g,'""')+'"';
+  const csv=[columns.map(col=>quote(col.label)).join(","),...rows.map(row=>columns.map(col=>quote(col.get(row))).join(","))].join("\r\n");
+  const blob=new Blob(["\\uFEFF",csv],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob),link=document.createElement("a");
+  link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
  }
  async function showStockHistory(p){
   setHistoryProduct(p.id);setHistory([]);
@@ -279,6 +307,17 @@ function AdminPage(){
      {!data.lowStock.length&&<p className="muted-note">Aucune alerte de stock.</p>}
     </section>
 
+    <section className="commerce-panel">
+     <div className="staff-section-heading"><div><span className="section-kicker">ENCAISSEMENTS</span><h2>Historique des paiements et remboursements</h2></div><span className="staff-count">{payments.length}</span></div>
+     <p className="muted-note">Le remboursement est enregistré après son exécution effective hors boutique. La référence de transaction et le justificatif sont obligatoires pour le clôturer.</p>
+     {payments.map(payment=><PaymentAdminRow key={payment.id} payment={payment} busy={busy} onRequest={requestRefund} onUpdate={updateRefund} onUpload={uploadRefundProof} onViewProof={viewRefundProof}/>)}
+     {!payments.length&&<p className="muted-note">Aucun paiement enregistré.</p>}
+    </section>
+    <section className="commerce-panel">
+     <div className="staff-section-heading"><div><span className="section-kicker">CENTRE DE NOTIFICATIONS</span><h2>Alertes administratives</h2></div><span className="staff-count">{adminNotifications.length}</span></div>
+     {adminNotifications.map(item=><div className="notification-row" key={item.id}><strong>{item.title}</strong><p>{item.message}</p><small>{new Date(item.created_at).toLocaleString("fr-FR")} · E-mail : {item.email_status||"non envoyé"}{item.email_error?" · "+item.email_error:""}</small></div>)}
+     {!adminNotifications.length&&<p className="muted-note">Aucune alerte administrative enregistrée.</p>}
+    </section>
     <section className="commerce-panel"><h2>Commandes récentes</h2>
      {data.orders.map(o=><div className="admin-order-line" key={o.id}><div><strong>{o.order_number}</strong><small>{o.status} · {o.payment_status} · {o.delivery_status}</small></div><strong>{money.format(Number(o.total))}</strong>
       <select value={o.status} onChange={e=>act(adminUpdateOrderStatus,{orderId:o.id,status:e.target.value})}><option value="confirmed">Confirmée</option><option value="preparing">En préparation</option><option value="ready_for_delivery">Prête à livrer</option><option value="completed">Terminée</option><option value="cancelled">Annulée</option></select>
@@ -297,9 +336,89 @@ function AdminPage(){
      {deliveries.map(d=><div className="table-line" key={d.id}><span><strong>{d.order_number}</strong><small>{d.address_snapshot?.recipientName} · {d.address_snapshot?.phone} · {d.address_snapshot?.addressLine}, {d.address_snapshot?.city} · {d.status}</small></span><span>{d.courier_name||"Non attribuée"}</span>{d.proof_url&&<span>Preuve ajoutée</span>}</div>)}
     </section>
 
-    <section className="commerce-panel"><h2>Rapport des ventes · 30 jours</h2>{reports?.daily.map(d=><div className="table-line" key={d.day}><span>{new Date(d.day).toLocaleDateString("fr-FR")}</span><span>{d.orders} commande(s)</span><strong>{money.format(Number(d.sales))}</strong></div>)}<h3>Produits les plus vendus</h3>{reports?.topProducts.map((p,i)=><div className="table-line" key={p.product_name}><span>{i+1}. {p.product_name}</span><span>{p.quantity} vendu(s)</span><strong>{money.format(Number(p.sales))}</strong></div>)}</section>
+    <section className="commerce-panel">
+     <div className="staff-section-heading"><div><span className="section-kicker">ANALYSE COMMERCIALE</span><h2>Rapports et suivi commercial · 90 jours</h2></div></div>
+     <div className="admin-stat-grid">
+      <Stat label="Commandes réglées" value={reports?.summary?.paid_orders??0}/>
+      <Stat label="Commandes totales" value={reports?.summary?.total_orders??0}/>
+      <Stat label="Montant encaissé" value={money.format(Number(reports?.summary?.net_collected||0))}/>
+      <Stat label="Montant brut reconnu" value={money.format(Number(reports?.summary?.gross_revenue||0))}/>
+      <Stat label="Panier moyen encaissé" value={money.format(Number(reports?.summary?.average_order||0))}/>
+      <Stat label="Paiements en attente" value={reports?.summary?.pending_payments??0}/>
+      <Stat label="Paiements échoués" value={reports?.summary?.failed_payments??0}/>
+     </div>
+     <div className="report-export-actions">
+      <button className="text-button" onClick={()=>exportCsv("lama-market-ventes-90-jours.csv",reports?.daily||[],[{label:"Date",get:r=>r.day},{label:"Commandes",get:r=>r.orders},{label:"Ventes HTG",get:r=>r.sales}])}>Exporter ventes CSV</button>
+      <button className="text-button" onClick={()=>exportCsv("lama-market-produits-vendus.csv",reports?.topProducts||[],[{label:"Produit",get:r=>r.product_name},{label:"Quantité",get:r=>r.quantity},{label:"Ventes HTG",get:r=>r.sales}])}>Exporter produits CSV</button>
+      <button className="text-button" onClick={()=>exportCsv("lama-market-stocks.csv",reports?.stock||[],[{label:"Produit",get:r=>r.name},{label:"SKU",get:r=>r.sku},{label:"Catégorie",get:r=>r.category},{label:"Stock",get:r=>r.stock},{label:"Seuil",get:r=>r.low_stock_threshold},{label:"Actif",get:r=>r.is_active}])}>Exporter stocks CSV</button>
+      <button className="text-button" onClick={()=>exportCsv("lama-market-paiements.csv",payments,[{label:"Commande",get:r=>r.order_number},{label:"Client",get:r=>r.customer_name},{label:"Méthode",get:r=>r.method},{label:"Fournisseur",get:r=>r.provider},{label:"Montant HTG",get:r=>r.amount},{label:"Statut",get:r=>r.status},{label:"Référence",get:r=>r.external_reference},{label:"Date",get:r=>r.created_at}])}>Exporter paiements CSV</button>
+     </div>
+     <h3>Historique des ventes</h3>
+     <div className="report-table-wrap"><table className="report-table"><thead><tr><th>Date</th><th>Commandes encaissées</th><th>Ventes HTG</th></tr></thead><tbody>{reports?.daily.map(d=><tr key={d.day}><td>{new Date(d.day).toLocaleDateString("fr-FR")}</td><td>{d.orders}</td><td>{money.format(Number(d.sales))}</td></tr>)}</tbody></table></div>
+     <h3>Produits les plus vendus</h3>
+     {(reports?.topProducts||[]).map((p,i)=><div className="table-line" key={p.product_name}><span>{i+1}. {p.product_name}</span><span>{p.quantity} vendu(s)</span><strong>{money.format(Number(p.sales))}</strong></div>)}
+     <h3>État des stocks</h3>
+     {(reports?.stock||[]).slice(0,20).map(p=><div className="table-line" key={p.id}><span><strong>{p.name}</strong><small>{p.sku||"Sans référence"} · {p.category}</small></span><span>{p.stock} en stock</span><strong>Seuil {p.low_stock_threshold}</strong></div>)}
+     <h3>Encaissements par moyen de paiement</h3>
+     {(reports?.paymentMethods||[]).map(p=><div className="table-line" key={p.method}><span>{p.method}</span><span>{p.transactions} transaction(s)</span><strong>{money.format(Number(p.collected))}</strong></div>)}
+    </section>
    </>}
   </div>
  </main>;
 }
 function Stat({label,value}){return <div className="admin-stat"><small>{label}</small><strong>{value}</strong></div>}
+
+function PaymentAdminRow({payment,busy,onRequest,onUpdate,onUpload,onViewProof}){
+ const [amount,setAmount]=useState("");
+ const [reason,setReason]=useState("");
+ const [draftError,setDraftError]=useState("");
+ const money=new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
+ const refunds=payment.refunds||[];
+ const canRefund=["paid","cash_collected","partially_refunded"].includes(payment.status);
+ async function request(event){
+  event.preventDefault();setDraftError("");
+  const ok=await onRequest(payment.id,amount,reason);
+  if(ok){setAmount("");setReason("");}
+ }
+ return <article className="payment-admin-card">
+  <div className="payment-admin-heading"><div><strong>{payment.order_number}</strong><small>{payment.customer_name||payment.email} · {payment.method} · {payment.provider||"Paiement direct"}</small></div><div><strong>{money.format(Number(payment.amount))}</strong><span className={"payment-status status-"+payment.status}>{payment.status}</span></div></div>
+  {payment.external_reference&&<p className="muted-note">Référence : {payment.external_reference}</p>}
+  <p className="muted-note">Montant déjà remboursé : {money.format(Number(payment.refunded_total||0))} · Commande : {payment.order_status}</p>
+  {refunds.map(refund=><RefundAdminRow key={refund.id} refund={refund} busy={busy} onUpdate={onUpdate} onUpload={onUpload} onViewProof={onViewProof}/>)}
+  {canRefund&&<form className="account-form refund-request-form" onSubmit={request}>
+   <strong>Enregistrer une demande de remboursement</strong>
+   <div className="form-two"><label>Montant HTG<input type="number" min="0.01" max={Math.max(0,Number(payment.amount)-Number(payment.refunded_total||0))} step="0.01" required value={amount} onChange={e=>setAmount(e.target.value)}/></label><label>Motif<input required maxLength={500} value={reason} onChange={e=>setReason(e.target.value)}/></label></div>
+   {draftError&&<small role="alert">{draftError}</small>}
+   <button className="account-submit" disabled={busy}>Créer la demande</button>
+  </form>}
+ </article>;
+}
+function RefundAdminRow({refund,busy,onUpdate,onUpload,onViewProof}){
+ const [status,setStatus]=useState(refund.status);
+ const [reference,setReference]=useState(refund.externalReference||"");
+ const [file,setFile]=useState(null);
+ const [error,setError]=useState("");
+ const [uploading,setUploading]=useState(false);
+ const money=new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
+ async function save(){
+  setError("");setUploading(true);
+  try{
+   let proof=refund.proofStorageKey||"";
+   if(file){proof=await onUpload(refund.id,file);}
+   await onUpdate(refund.id,status,reference,proof);
+  }catch(e){setError(e.message||"Mise à jour impossible.");}
+  finally{setUploading(false);}
+ }
+ return <div className="refund-admin-row">
+  <div className="payment-admin-heading"><strong>{money.format(Number(refund.amount))}</strong><span className={"payment-status status-"+status}>{status}</span></div>
+  <p>{refund.reason}</p>
+  <div className="form-two">
+   <label>Statut<select value={status} disabled={refund.status==="completed"||busy} onChange={e=>setStatus(e.target.value)}><option value="requested">Demandé</option><option value="processing">En traitement</option><option value="completed">Effectué</option><option value="failed">Échoué</option><option value="cancelled">Annulé</option></select></label>
+   <label>Référence du remboursement<input value={reference} disabled={refund.status==="completed"||busy} onChange={e=>setReference(e.target.value)} placeholder="Référence du transfert"/></label>
+  </div>
+  <label>Justificatif du remboursement (PDF, JPG, PNG, WebP · 8 Mo maximum)<input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" disabled={refund.status==="completed"||busy} onChange={e=>setFile(e.target.files?.[0]||null)}/></label>
+  {refund.proofStorageKey&&<button type="button" className="text-button" onClick={()=>onViewProof(refund.id)}>Ouvrir le justificatif sécurisé</button>}
+  {error&&<div className="form-message" role="alert">{error}</div>}
+  <button type="button" className="account-submit" disabled={busy||uploading||refund.status==="completed"} onClick={save}>{uploading?"Envoi…":"Enregistrer le remboursement"}</button>
+ </div>;
+}
