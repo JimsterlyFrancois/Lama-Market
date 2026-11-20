@@ -27,11 +27,11 @@ function CartPage(){
   }
   useEffect(()=>{load();},[]);
   async function quantity(item,value){
-    try{const token=await getAccessToken();await updateCartItem({data:{token,itemId:item.id,quantity:Number(value)}});await load();}
+    try{setQuote(null);const token=await getAccessToken();await updateCartItem({data:{token,itemId:item.id,quantity:Number(value)}});await load();}
     catch(e){setMessage(e.message);}
   }
   async function remove(item){
-    const token=await getAccessToken();await removeCartItem({data:{token,itemId:item.id}});await load();
+    setQuote(null);const token=await getAccessToken();await removeCartItem({data:{token,itemId:item.id}});await load();
   }
   function editAddress(field,value){setAddressId("");setAddress(current=>({...current,[field]:value}));setQuote(null);}
   function chooseAddress(id){
@@ -87,7 +87,7 @@ function CartPage(){
               {quoteMessage&&<div className="form-message" role="alert">{quoteMessage}</div>}
               {!quote&&<small>Calculez le total avant confirmation. Le montant définitif est recalculé et vérifié côté serveur.</small>}
               {message&&<div className="form-message" role="alert">{message}</div>}
-              <button className="account-submit" disabled={busy}>{busy?"Validation…":"Confirmer la commande"}</button>
+              <button className="account-submit" disabled={busy||!quote||quote.total===null}>{busy?"Validation…":"Confirmer la commande"}</button>
             </form>
           </section>
         </div>
