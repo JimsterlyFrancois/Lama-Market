@@ -124,12 +124,11 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
     const cart = await client.query("select id from public.carts where user_id=$1 and status='active' for update", [user.id]);
     if (!cart.rowCount) fail("Votre panier est vide.");
     const items = await client.query(
-      "select ci.product_id,ci.quantity,p.name,p.sku,p.price,p.stock from public.cart_items ci join public.products p on p.id=ci.product_id where ci.cart_id=$1 and p.is_active=true and p.deleted_at is null for update of p",
+      "select ci.product_id,ci.quantity,p.name,p.sku,case when p.old_price is not null and p.discount_ends_at is not null and p.discount_ends_at<=now() then p.old_price else p.price end price,p.stock from public.cart_items ci join public.products p on p.id=ci.product_id where ci.cart_id=$1 and p.is_active=true and p.deleted_at is null for update of p",
       [cart.rows[0].id],
     );
     if (!items.rowCount) fail("Votre panier est vide ou contient des produits indisponibles.");
     let subtotal = 0;
-    if (promotion.coupon) await client.query("insert into public.coupon_redemptions(coupon_id,order_id,customer_id,discount_amount) values($1,$2,$3,$4)", [promotion.coupon.id,order.rows[0].id,user.id,promotion.discount]);
     for (const item of items.rows) {
       if (item.stock < item.quantity) fail("Stock insuffisant pour : " + item.name);
       subtotal += Number(item.price) * item.quantity;
@@ -153,6 +152,9 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
       "insert into public.orders(order_number,customer_id,status,payment_status,delivery_status,subtotal,discount_total,delivery_fee,total,address_snapshot,customer_note,idempotency_key,confirmed_at) values($1,$2,'confirmed','cash_due','unassigned',$3,$4,$5,$6,$7,$8,$9,now()) returning id",
       [orderNumber,user.id,subtotal,promotion.discount,deliveryFee,total,snapshot,clean(data.note,500)||null,idem],
     );
+    if (promotion.coupon) {
+      await client.query("insert into public.coupon_redemptions(coupon_id,order_id,customer_id,discount_amount) values($1,$2,$3,$4)", [promotion.coupon.id,order.rows[0].id,user.id,promotion.discount]);
+    }
     for (const item of items.rows) {
       const changed = await client.query("update public.products set stock=stock-$2,updated_at=now() where id=$1 and stock >= $2 returning id", [item.product_id,item.quantity]);
       if (!changed.rowCount) fail("Le stock a changé. Actualisez votre panier.");
