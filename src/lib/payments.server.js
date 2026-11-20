@@ -68,7 +68,7 @@ async function releaseOrderReservations(client, orderId, actorId = null, note = 
 }
 
 export async function getPaymentAvailability() {
-  const configured = Boolean(process.env.TRANZAK_API_KEY);
+  const configured = Boolean(process.env.TRANZAK_API_KEY && process.env.TRANZAK_WEBHOOK_SECRET);
   return {
     provider: configured ? "tranzak" : null,
     cash_on_delivery: true,
