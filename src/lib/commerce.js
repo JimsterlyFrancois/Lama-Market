@@ -180,7 +180,10 @@ export const getMyOrders = createServerFn({ method: "GET" }).validator((data) =>
   const user = await ensureCustomer(data.token);
   const db = await getDb();
   const result = await db.query(
-    "select o.id,o.order_number,o.status,o.payment_status,o.delivery_status,o.subtotal,o.delivery_fee,o.total,o.currency,o.created_at,coalesce(json_agg(json_build_object('name',oi.product_name,'quantity',oi.quantity,'price',oi.unit_price)) filter(where oi.id is not null),'[]') items from public.orders o left join public.order_items oi on oi.order_id=o.id where o.customer_id=$1 group by o.id order by o.created_at desc",
+    `select o.id,o.order_number,o.status,o.payment_status,o.delivery_status,o.subtotal,o.discount_total,o.delivery_fee,o.total,o.currency,o.address_snapshot,o.customer_note,o.created_at,
+      coalesce((select json_agg(json_build_object('name',oi.product_name,'sku',oi.product_sku,'quantity',oi.quantity,'price',oi.unit_price,'lineTotal',oi.line_total) order by oi.created_at) from public.order_items oi where oi.order_id=o.id),'[]') items,
+      coalesce((select json_agg(json_build_object('status',h.new_status,'note',h.note,'createdAt',h.created_at) order by h.created_at) from public.order_status_history h where h.order_id=o.id),'[]') history
+     from public.orders o where o.customer_id=$1 order by o.created_at desc`,
     [user.id],
   );
   return result.rows;
