@@ -122,8 +122,15 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
   const idem = clean(data.idempotencyKey, 100) || crypto.randomUUID();
   try {
     await client.query("begin");
-    const prior = await client.query("select id,order_number from public.orders where idempotency_key=$1 and customer_id=$2", [idem,user.id]);
-    if (prior.rowCount) { await client.query("commit"); return { id: prior.rows[0].id, orderNumber: prior.rows[0].order_number }; }
+    const prior = await client.query(
+      "select o.id,o.order_number,p.method from public.orders o left join public.payments p on p.order_id=o.id where o.idempotency_key=$1 and o.customer_id=$2 order by p.created_at desc limit 1",
+      [idem,user.id],
+    );
+    if (prior.rowCount) {
+      await client.query("commit");
+      const repeatedOnline = ["moncash","natcash"].includes(prior.rows[0].method);
+      return { id: prior.rows[0].id, orderNumber: prior.rows[0].order_number, paymentMethod: prior.rows[0].method, paymentRequired: repeatedOnline };
+    }
     const cart = await client.query("select id from public.carts where user_id=$1 and status='active' for update", [user.id]);
     if (!cart.rowCount) fail("Votre panier est vide.");
     const items = await client.query(
@@ -144,6 +151,7 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
     const deliveryFee = zone.rows[0].free_from !== null && subtotal >= Number(zone.rows[0].free_from) ? 0 : Number(zone.rows[0].fee);
     const promotion = await couponDiscount(client,data.couponCode,user.id,subtotal,true);
     const total = subtotal + deliveryFee - promotion.discount;
+    if (paymentMethod === "natcash" && total < 20) fail("Le montant minimum pour NatCash est de 20 HTG.");
     const orderNumber = "LM-" + new Date().toISOString().slice(0,10).replaceAll("-","") + "-" + crypto.randomUUID().slice(0,8).toUpperCase();
     const snapshot = {
       recipientName: clean(address.recipientName,180), phone: clean(address.phone,40),
@@ -295,7 +303,7 @@ export const courierUpdateDelivery = createServerFn({ method: "POST" }).validato
   const client=await db.connect();
   try{
     await client.query("begin");
-    const delivery=await client.query("select d.id,d.order_id,d.status,o.status order_status,o.customer_id,o.payment_status from public.deliveries d join public.orders o on o.id=d.order_id where d.id=$1 and d.courier_id=$2 for update",[data.deliveryId,courier.id]);
+    const delivery=await client.query("select d.id,d.order_id,d.status,o.status order_status,o.customer_id,o.order_number,o.payment_status from public.deliveries d join public.orders o on o.id=d.order_id where d.id=$1 and d.courier_id=$2 for update",[data.deliveryId,courier.id]);
     if(!delivery.rowCount) fail("Livraison introuvable.");
     const transitions = { assigned:["preparing","in_transit","failed"], preparing:["in_transit","failed"], in_transit:["delivered","failed"], failed:["in_transit","returned"], returned:[], delivered:[] };
     if (!(transitions[delivery.rows[0].status] || []).includes(data.status)) fail("Cette transition de livraison n'est pas autorisée.");
@@ -326,8 +334,21 @@ export const courierUpdateDelivery = createServerFn({ method: "POST" }).validato
       await client.query("insert into public.order_status_history(order_id,previous_status,new_status,note,actor_id) values($1,$2,'cancelled',$3,$4)",[delivery.rows[0].order_id,delivery.rows[0].order_status,clean(data.note,500),courier.id]);
     }
 
-    await client.query("insert into public.notifications(user_id,type,title,message,data) select customer_id,'delivery_update','Mise à jour de livraison',$2,$3 from public.orders where id=$1",[delivery.rows[0].order_id,"Votre livraison est maintenant : "+data.status,{orderId:delivery.rows[0].order_id}]);
     await client.query("commit");
+    const titles={preparing:"Commande en préparation",in_transit:"Commande en cours de livraison",delivered:"Commande remise",failed:"Échec de livraison",returned:"Commande retournée"};
+    const messages={
+      preparing:"La commande "+delivery.rows[0].order_number+" est en préparation.",
+      in_transit:"La commande "+delivery.rows[0].order_number+" est en route vers votre adresse.",
+      delivered:"La commande "+delivery.rows[0].order_number+" a été remise au destinataire.",
+      failed:"La livraison de la commande "+delivery.rows[0].order_number+" n'a pas abouti : "+clean(data.failureReason,500),
+      returned:"La commande "+delivery.rows[0].order_number+" a été retournée à la boutique. Contactez Lama Market si un paiement a déjà été effectué.",
+    };
+    await (await import("./notifications.server")).createNotification(db,{
+      userId:delivery.rows[0].customer_id,type:"delivery_"+data.status,
+      title:titles[data.status]||"Mise à jour de livraison",
+      message:messages[data.status]||"Le statut de votre livraison a été modifié.",
+      data:{orderId:delivery.rows[0].order_id,orderNumber:delivery.rows[0].order_number,status:data.status},
+    });
     return {ok:true};
   }catch(e){await client.query("rollback");throw e;}finally{client.release();}
 });
@@ -383,10 +404,11 @@ export const adminUpdateOrderStatus = createServerFn({ method: "POST" }).validat
   const client = await db.connect();
   try {
     await client.query("begin");
-    const order = await client.query("select id,customer_id,status,delivery_status,payment_status from public.orders where id=$1 for update", [data.orderId]);
+    const order = await client.query("select id,customer_id,order_number,status,delivery_status,payment_status from public.orders where id=$1 for update", [data.orderId]);
     if (!order.rowCount) fail("Commande introuvable.");
     if (data.status === "completed" && (order.rows[0].delivery_status !== "delivered" || !["paid","cash_collected"].includes(order.rows[0].payment_status))) fail("Une commande ne peut être terminée qu'après livraison et règlement confirmé.");
     if (data.status === "cancelled") {
+      if (["paid","cash_collected","partially_refunded"].includes(order.rows[0].payment_status)) fail("Cette commande a déjà reçu un paiement. Enregistrez d'abord le remboursement avant l'annulation.");
       const reservations = await client.query("select product_id,quantity from public.stock_reservations where order_item_id in(select id from public.order_items where order_id=$1) and status='reserved' for update", [data.orderId]);
       for (const reservation of reservations.rows) {
         await client.query("update public.products set stock=stock+$2,updated_at=now() where id=$1", [reservation.product_id,reservation.quantity]);
@@ -394,12 +416,19 @@ export const adminUpdateOrderStatus = createServerFn({ method: "POST" }).validat
       }
       await client.query("update public.stock_reservations set status='released',released_at=now() where order_item_id in(select id from public.order_items where order_id=$1) and status='reserved'", [data.orderId]);
       await client.query("update public.deliveries set status='returned',updated_at=now() where order_id=$1 and status not in('delivered','returned')", [data.orderId]);
-      await client.query("update public.orders set cancelled_at=now(),updated_at=now() where id=$1", [data.orderId]);
+      await client.query("update public.payments set status='cancelled',updated_at=now() where order_id=$1 and status='pending'", [data.orderId]);
+      await client.query("update public.orders set payment_status=case when payment_status='pending' then 'failed' else payment_status end,cancelled_at=now(),updated_at=now() where id=$1", [data.orderId]);
     }
     await client.query("update public.orders set status=$2,updated_at=now() where id=$1", [data.orderId,data.status]);
     await client.query("insert into public.order_status_history(order_id,previous_status,new_status,note,actor_id) values($1,$2,$3,$4,$5)", [data.orderId,order.rows[0].status,data.status,clean(data.note,500)||null,admin.id]);
-    await client.query("insert into public.notifications(user_id,type,title,message,data) values($1,'order_update','Mise à jour de commande',$2,$3)", [order.rows[0].customer_id,"Votre commande est maintenant : "+data.status,{orderId:data.orderId}]);
     await client.query("commit");
+    const labels={confirmed:"confirmée",preparing:"en préparation",ready_for_delivery:"prête à être livrée",completed:"terminée",cancelled:"annulée"};
+    await (await import("./notifications.server")).createNotification(db,{
+      userId:order.rows[0].customer_id,type:"order_"+data.status,
+      title:"Mise à jour de votre commande",
+      message:"Votre commande "+order.rows[0].order_number+" est maintenant "+(labels[data.status]||data.status)+".",
+      data:{orderId:data.orderId,orderNumber:order.rows[0].order_number,status:data.status},
+    });
     return {ok:true};
   } catch(e) { await client.query("rollback"); throw e; } finally { client.release(); }
 });
