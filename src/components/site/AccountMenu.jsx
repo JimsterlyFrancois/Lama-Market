@@ -36,14 +36,9 @@ export default function AccountMenu() {
 
   if (isLoadingAuth || !isAuthenticated) {
     return (
-      <button
-        type="button"
-        onClick={() => navigateToLogin()}
-        aria-label="Se connecter"
-        className="grid h-10 w-10 place-items-center rounded-full text-foreground/70 transition-colors hover:bg-secondary hover:text-primary"
-      >
-        <img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" className="h-7 w-7 object-contain" />
-      </button>
+<Link to="/espace" aria-label="Espace professionnel" title="Espace professionnel" className="grid h-10 w-10 place-items-center rounded-full border border-border bg-card text-foreground/70 shadow-sm transition-colors hover:bg-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+        <UserRound className="h-5 w-5" strokeWidth={1.9} aria-hidden="true" />
+      </Link>
     );
   }
 
