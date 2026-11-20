@@ -11,6 +11,7 @@ function CartPage(){
   const [items,setItems]=useState([]);
   const [addresses,setAddresses]=useState([]);
   const [addressId,setAddressId]=useState("");
+  const [addressInitialized,setAddressInitialized]=useState(false);
   const [couponCode,setCouponCode]=useState("");
   const [quote,setQuote]=useState(null);
   const [quoteMessage,setQuoteMessage]=useState("");
@@ -21,7 +22,7 @@ function CartPage(){
   const total=useMemo(()=>items.reduce((sum,item)=>sum+Number(item.price)*item.quantity,0),[items]);
   async function load(){
     setLoading(true);setMessage("");
-    try{const token=await getAccessToken();const [cartRows,savedAddresses]=await Promise.all([getMyCart({data:{token}}),getMyAddresses({data:{token}})]);setItems(cartRows);setAddresses(savedAddresses);const primary=savedAddresses.find(a=>a.is_default);if(primary&&!addressId){setAddressId(primary.id);setAddress({recipientName:primary.recipient_name,phone:primary.phone,addressLine:primary.address_line,city:primary.city,area:primary.area||"",landmark:primary.landmark||"",instructions:primary.delivery_instructions||""});}}
+    try{const token=await getAccessToken();const [cartRows,savedAddresses]=await Promise.all([getMyCart({data:{token}}),getMyAddresses({data:{token}})]);setItems(cartRows);setAddresses(savedAddresses);const primary=savedAddresses.find(a=>a.is_default);if(primary&&!addressInitialized){setAddressId(primary.id);setAddress({recipientName:primary.recipient_name,phone:primary.phone,addressLine:primary.address_line,city:primary.city,area:primary.area||"",landmark:primary.landmark||"",instructions:primary.delivery_instructions||""});}setAddressInitialized(true);}
     catch(e){setMessage(e.message||"Connectez-vous pour consulter votre panier.");}
     finally{setLoading(false);}
   }
