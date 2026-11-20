@@ -46,3 +46,16 @@ test("server-side permissions are derived from verified Neon identity and databa
   assert.match(commerce, /requireRole\(data\.token, \["admin"\]\)/);
   assert.doesNotMatch(auth, /payload\.role/);
 });
+
+test("the animated storefront cover is uploadable only by administrators", async () => {
+  const storage = await read("../src/lib/storage.server.js");
+  const commerce = await read("../src/lib/commerce.js");
+  const admin = await read("../src/routes/admin.jsx");
+  const home = await read("../src/routes/index.jsx");
+  assert.match(storage, /contentType !== "image\/gif"/);
+  assert.match(commerce, /getCoverImageUploadUrl/);
+  assert.match(commerce, /requireRole\(data\.token, \["admin"\]\)/);
+  assert.match(commerce, /store_settings/);
+  assert.match(admin, /accept="image\/gif/);
+  assert.match(home, /getStorefrontSettings/);
+});
