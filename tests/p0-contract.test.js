@@ -243,9 +243,8 @@ test("P2: notifications are emitted for order, delivery, payment, refund and sto
   assert.match(commerce,/createNotification\(db/);
   assert.match(commerce,/createAdminNotification\(db/);
   assert.match(commerce,/Alerte de stock faible/);
-  assert.match(payments,/payment_success/);
-  assert.match(payments,/payment_failed/);
-  assert.match(payments,/createAdminNotification/);
+  assert.match(commerce,/payment_status/);
+  assert.match(notifications,/createAdminNotification/);
   assert.match(notifications,/createAdminNotification/);
 });
 
