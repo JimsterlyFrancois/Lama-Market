@@ -1,20 +1,20 @@
 import { useEffect,useState } from "react";
 import { createFileRoute,Link } from "@tanstack/react-router";
 import { authClient,getAccessToken } from "../lib/auth-client";
-import { getMyProfile,updateMyProfile,getMyNotifications,getMyAddresses,saveMyAddress,deleteMyAddress,getMyNotificationPreferences,updateMyNotificationPreferences } from "../lib/commerce";
+import { getMyProfile,updateMyProfile,getMyNotifications,getMyAddresses,saveMyAddress,deleteMyAddress,getMyNotificationPreferences,updateMyNotificationPreferences,getMyAccessContext } from "../lib/commerce";
 export const Route=createFileRoute("/compte")({component:ProfilePage});
 const emptyAddress={recipientName:"",phone:"",addressLine:"",department:"",city:"Cap-Haïtien",area:"",landmark:"",instructions:"",isDefault:false};
 function ProfilePage(){
  const [profile,setProfile]=useState({phone:"",preferred_name:""}),[email,setEmail]=useState("");
  const [notice,setNotice]=useState(""),[notifications,setNotifications]=useState([]),[addresses,setAddresses]=useState([]);
  const [address,setAddress]=useState(emptyAddress),[editingAddressId,setEditingAddressId]=useState("");
- const [busy,setBusy]=useState(false);
+ const [busy,setBusy]=useState(false),[access,setAccess]=useState(null);
  const [preferences,setPreferences]=useState({email_enabled:true,sms_enabled:false});
  async function load(){
   try{
    const token=await getAccessToken();
-   const [p,n,a,prefs]=await Promise.all([getMyProfile({data:{token}}),getMyNotifications({data:{token}}),getMyAddresses({data:{token}}),getMyNotificationPreferences({data:{token}})]);
-   setProfile(p.profile||{phone:"",preferred_name:""});setEmail(p.user.email||"");setNotifications(n);setAddresses(a);setPreferences(prefs);setNotice("");
+   const [p,n,a,prefs,role]=await Promise.all([getMyProfile({data:{token}}),getMyNotifications({data:{token}}),getMyAddresses({data:{token}}),getMyNotificationPreferences({data:{token}}),getMyAccessContext({data:{token}}).catch(()=>null)]);
+   setProfile(p.profile||{phone:"",preferred_name:""});setEmail(p.user.email||"");setNotifications(n);setAddresses(a);setPreferences(prefs);setAccess(role);setNotice("");
   }catch(e){setNotice(e.message);}
  }
  useEffect(()=>{load();},[]);
@@ -42,7 +42,7 @@ function ProfilePage(){
  return <main className="commerce-page">
   <header className="commerce-header"><Link to="/">← Accueil</Link><strong className="commerce-brand"><img src="/images/lama-market-logo.svg" alt="" aria-hidden="true"/>Mon compte</strong><button className="text-button" onClick={logout}>Déconnexion</button></header>
   <div className="commerce-container">
-   <div className="commerce-title"><span>ESPACE CLIENT</span><h1>Mon profil</h1><p>Gérez vos coordonnées et vos adresses de livraison.</p></div>
+   <div className="commerce-title"><span>ESPACE PERSONNEL</span><h1>Mon profil</h1><p>Gérez vos coordonnées, vos adresses et vos préférences.</p><span className="cover-current-label">{access?.primaryRole==="admin"?"ADM":access?.primaryRole==="courier"?"Livreur":access?.primaryRole==="customer"?"Acheteur · Actif":access?.primaryRole?"Équipe":"Compte"}</span></div>
    {notice&&<div className="form-message" role="status">{notice}</div>}
    <div className="profile-grid">
     <section className="commerce-panel"><h2>Mes coordonnées</h2><form className="account-form" onSubmit={save}>
