@@ -340,11 +340,21 @@ export const getMyNotifications = createServerFn({ method: "GET" }).validator((d
 export const getAdminReports = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token,["admin"]);
   const db=await getDb();
-  const [daily,top]=await Promise.all([
-    db.query("select date_trunc('day',created_at)::date day,count(*)::int orders,coalesce(sum(total),0)::numeric(12,2) sales from public.orders where created_at>=now()-interval '30 days' and payment_status in ('paid','cash_collected') and status<>'cancelled' group by 1 order by 1"),
-    db.query("select oi.product_name,sum(oi.quantity)::int quantity,sum(oi.line_total)::numeric(12,2) sales from public.order_items oi join public.orders o on o.id=oi.order_id where o.status<>'cancelled' group by oi.product_name order by quantity desc limit 10"),
+  const [summary,daily,top,paymentMethods,stock]=await Promise.all([
+    db.query(`select count(*) filter(where payment_status in ('paid','cash_collected','partially_refunded','refunded'))::int paid_orders,
+      count(*)::int total_orders,
+      coalesce(sum(total) filter(where payment_status in ('paid','cash_collected','partially_refunded','refunded')),0)::numeric(12,2) gross_revenue,
+      coalesce(sum(total) filter(where payment_status in ('paid','cash_collected')),0)::numeric(12,2) net_collected,
+      coalesce(avg(total) filter(where payment_status in ('paid','cash_collected')),0)::numeric(12,2) average_order,
+      count(*) filter(where payment_status='pending')::int pending_payments,
+      count(*) filter(where payment_status='failed')::int failed_payments
+      from public.orders`),
+    db.query("select date_trunc('day',created_at)::date day,count(*)::int orders,coalesce(sum(total),0)::numeric(12,2) sales from public.orders where created_at>=now()-interval '90 days' and payment_status in ('paid','cash_collected','partially_refunded','refunded') and status<>'cancelled' group by 1 order by 1"),
+    db.query("select oi.product_name,sum(oi.quantity)::int quantity,sum(oi.line_total)::numeric(12,2) sales from public.order_items oi join public.orders o on o.id=oi.order_id where o.payment_status in ('paid','cash_collected','partially_refunded','refunded') and o.status<>'cancelled' group by oi.product_name order by quantity desc limit 20"),
+    db.query("select p.method,count(*)::int transactions,coalesce(sum(p.amount) filter(where p.status in ('paid','cash_collected','partially_refunded','refunded')),0)::numeric(12,2) collected,count(*) filter(where p.status='pending')::int pending,count(*) filter(where p.status='failed')::int failed from public.payments p group by p.method order by p.method"),
+    db.query("select id,name,sku,category,stock,low_stock_threshold,is_active from public.products where deleted_at is null order by stock asc,name limit 500"),
   ]);
-  return {daily:daily.rows,topProducts:top.rows};
+  return {summary:summary.rows[0],daily:daily.rows,topProducts:top.rows,paymentMethods:paymentMethods.rows,stock:stock.rows};
 });
 
 
@@ -868,4 +878,138 @@ export const startOrderPayment=createServerFn({method:"POST"}).validator((data)=
 export const refreshOrderPayment=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
   const user=await requireUser(data.token);
   return (await import("./payments.server")).reconcileTranzakPayment({orderId:data.orderId,userId:user.id});
+});
+
+
+export const getMyNotificationPreferences=createServerFn({method:"GET"}).validator((data)=>data).handler(async({data})=>{
+  const user=await requireUser(data.token),db=await getDb();
+  await db.query("insert into public.notification_preferences(user_id) values($1) on conflict(user_id) do nothing",[user.id]);
+  const result=await db.query("select email_enabled,sms_enabled from public.notification_preferences where user_id=$1",[user.id]);
+  return result.rows[0]||{email_enabled:true,sms_enabled:false};
+});
+
+export const updateMyNotificationPreferences=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  const user=await requireUser(data.token);
+  const result=await (await getDb()).query(
+    "insert into public.notification_preferences(user_id,email_enabled,sms_enabled,updated_at) values($1,$2,false,now()) on conflict(user_id) do update set email_enabled=excluded.email_enabled,updated_at=now() returning email_enabled,sms_enabled",
+    [user.id,data.emailEnabled!==false],
+  );
+  return result.rows[0];
+});
+
+export const adminListPayments=createServerFn({method:"GET"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  const result=await (await getDb()).query(
+    `select p.id,p.order_id,p.method,p.provider,p.amount,p.currency,p.status,p.external_reference,p.paid_at,p.created_at,
+      o.order_number,o.payment_status,o.status order_status,u.name customer_name,u.email,
+      coalesce((select json_agg(json_build_object('id',r.id,'amount',r.amount,'status',r.status,'reason',r.reason,'externalReference',r.external_reference,'proofStorageKey',r.proof_storage_key,'createdAt',r.created_at,'processedAt',r.processed_at) order by r.created_at desc) from public.payment_refunds r where r.payment_id=p.id),'[]') refunds,
+      coalesce((select sum(r.amount) from public.payment_refunds r where r.payment_id=p.id and r.status='completed'),0)::numeric(12,2) refunded_total
+     from public.payments p join public.orders o on o.id=p.order_id
+     join neon_auth."user" u on u.id=o.customer_id
+     order by p.created_at desc limit 200`,
+  );
+  return result.rows;
+});
+
+export const adminCreateRefund=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  const admin=await requireRole(data.token,["admin"]),db=await getDb(),client=await db.connect();
+  const amount=Number(data.amount),reason=clean(data.reason,500);
+  if(!Number.isFinite(amount)||amount<=0||!reason)fail("Montant et motif du remboursement requis.");
+  const idem=clean(data.idempotencyKey,100)||crypto.randomUUID();
+  try{
+    await client.query("begin");
+    const prior=await client.query("select id,status from public.payment_refunds where idempotency_key=$1",[idem]);
+    if(prior.rowCount){await client.query("commit");return prior.rows[0];}
+    const payment=await client.query(
+      "select p.id,p.order_id,p.amount,p.status,o.customer_id,o.order_number from public.payments p join public.orders o on o.id=p.order_id where p.id=$1 for update of p,o",
+      [data.paymentId],
+    );
+    if(!payment.rowCount)fail("Paiement introuvable.");
+    if(!["paid","cash_collected","partially_refunded"].includes(payment.rows[0].status))fail("Seul un paiement encaissé peut être remboursé.");
+    const refunded=await client.query("select coalesce(sum(amount),0)::numeric(12,2) total from public.payment_refunds where payment_id=$1 and status='completed'",[data.paymentId]);
+    const available=Number(payment.rows[0].amount)-Number(refunded.rows[0].total);
+    if(amount>available)fail("Le montant dépasse le solde remboursable.");
+    const refund=await client.query(
+      "insert into public.payment_refunds(payment_id,order_id,amount,reason,idempotency_key,requested_by) values($1,$2,$3,$4,$5,$6) returning id,status",
+      [data.paymentId,payment.rows[0].order_id,amount,reason,idem,admin.id],
+    );
+    await client.query("insert into public.audit_logs(actor_id,action,entity_type,entity_id,details) values($1,'refund_requested','payment_refund',$2,$3)",[admin.id,refund.rows[0].id,{paymentId:data.paymentId,amount,reason}]);
+    await client.query("commit");
+    return refund.rows[0];
+  }catch(error){await client.query("rollback");throw error;}finally{client.release();}
+});
+
+export const adminUpdateRefund=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  const admin=await requireRole(data.token,["admin"]),db=await getDb(),client=await db.connect();
+  const nextStatus=clean(data.status,20);
+  if(!["processing","completed","failed","cancelled"].includes(nextStatus))fail("Statut de remboursement invalide.");
+  const proofKey=clean(data.proofStorageKey,1024)||null;
+  const externalReference=clean(data.externalReference,160)||null;
+  if(nextStatus==="completed"&&(!proofKey?.startsWith("refund-proofs/")||!externalReference))fail("Un justificatif privé et une référence de transaction sont obligatoires pour clôturer le remboursement.");
+  let customerId=null,orderId=null,orderNumber=null,refundAmount=null;
+  try{
+    await client.query("begin");
+    const found=await client.query(
+      "select r.id,r.payment_id,r.order_id,r.amount,r.status,p.amount payment_amount,p.status payment_status,o.customer_id,o.order_number from public.payment_refunds r join public.payments p on p.id=r.payment_id join public.orders o on o.id=r.order_id where r.id=$1 for update of r,p,o",
+      [data.refundId],
+    );
+    if(!found.rowCount)fail("Demande de remboursement introuvable.");
+    const row=found.rows[0];
+    if(row.status==="completed"&&nextStatus!=="completed")fail("Un remboursement clôturé ne peut plus être modifié.");
+    if(nextStatus==="completed"){
+      const total=await client.query("select coalesce(sum(amount),0)::numeric(12,2) value from public.payment_refunds where payment_id=$1 and status='completed' and id<>$2",[row.payment_id,row.id]);
+      if(Number(total.rows[0].value)+Number(row.amount)>Number(row.payment_amount))fail("Le total des remboursements dépasserait le montant encaissé.");
+    }
+    await client.query(
+      "update public.payment_refunds set status=$2,external_reference=coalesce($3,external_reference),proof_storage_key=coalesce($4,proof_storage_key),processed_by=$5,processed_at=case when $2 in ('completed','failed','cancelled') then now() else processed_at end,updated_at=now() where id=$1",
+      [row.id,nextStatus,externalReference,proofKey,admin.id],
+    );
+    if(nextStatus==="completed"){
+      const total=await client.query("select coalesce(sum(amount),0)::numeric(12,2) value from public.payment_refunds where payment_id=$1 and status='completed'",[row.payment_id]);
+      const paymentStatus=Number(total.rows[0].value)>=Number(row.payment_amount)?"refunded":"partially_refunded";
+      await client.query("update public.payments set status=$2,updated_at=now() where id=$1",[row.payment_id,paymentStatus]);
+      await client.query("update public.orders set payment_status=$2,updated_at=now() where id=$1",[row.order_id,paymentStatus]);
+      await client.query("insert into public.payment_transactions(payment_id,provider_event_id,event_type,signature_valid,payload,processed_at) values($1,$2,'refund.completed',false,$3,now()) on conflict(provider_event_id) do nothing",[row.payment_id,"admin-refund:"+row.id,{refundId:row.id,amount:row.amount,externalReference,proofStorageKey:proofKey,actorId:admin.id}]);
+    }
+    await client.query("insert into public.audit_logs(actor_id,action,entity_type,entity_id,details) values($1,$2,'payment_refund',$3,$4)",[admin.id,"refund_"+nextStatus,row.id,{externalReference,proofStorageKey:proofKey}]);
+    customerId=row.customer_id;orderId=row.order_id;orderNumber=row.order_number;refundAmount=Number(row.amount);
+    await client.query("commit");
+  }catch(error){await client.query("rollback");throw error;}finally{client.release();}
+  if(nextStatus==="completed"||nextStatus==="failed"){
+    const {createNotification}=await import("./notifications.server");
+    await createNotification(db,{
+      userId:customerId,type:"refund_update",
+      title:nextStatus==="completed"?"Remboursement effectué":"Remboursement non effectué",
+      message:nextStatus==="completed"
+        ? "Le remboursement de "+refundAmount.toLocaleString("fr-HT")+" HTG pour la commande "+orderNumber+" a été enregistré."
+        : "La demande de remboursement de la commande "+orderNumber+" n'a pas été effectuée. Contactez Lama Market pour les détails.",
+      data:{orderId,orderNumber,refundId:data.refundId,status:nextStatus},
+    });
+  }
+  return {ok:true,status:nextStatus};
+});
+
+export const getRefundProofUploadUrl=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  const refund=await (await getDb()).query("select id from public.payment_refunds where id=$1",[data.refundId]);
+  if(!refund.rowCount)fail("Demande de remboursement introuvable.");
+  return (await import("./storage.server")).createRefundProofUpload({contentType:data.contentType,size:Number(data.size)});
+});
+
+export const getRefundProofDownloadUrl=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  const result=await (await getDb()).query("select proof_storage_key from public.payment_refunds where id=$1",[data.refundId]);
+  if(!result.rowCount||!result.rows[0].proof_storage_key)fail("Justificatif introuvable.");
+  const key=result.rows[0].proof_storage_key;
+  if(!key.startsWith("refund-proofs/"))fail("Justificatif invalide.");
+  return {url:await (await import("./storage.server")).createRefundProofDownload({key})};
+});
+
+export const adminListNotifications=createServerFn({method:"GET"}).validator((data)=>data).handler(async({data})=>{
+  const admin=await requireRole(data.token,["admin"]);
+  const result=await (await getDb()).query(
+    "select n.id,n.type,n.title,n.message,n.data,n.read_at,n.created_at,d.status email_status,d.error_message email_error from public.notifications n left join public.notification_deliveries d on d.notification_id=n.id and d.channel='email' where n.user_id=$1 order by n.created_at desc limit 50",
+    [admin.id],
+  );
+  return result.rows;
 });
