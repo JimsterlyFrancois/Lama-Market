@@ -650,20 +650,34 @@ export const staffAdjustStock = createServerFn({ method: "POST" }).validator((da
 export const getMyAccessContext = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   const user = await requireUser(data.token);
   const db = await getDb();
-  const identity = await db.query('select email from neon_auth."user" where id=$1', [user.id]);
+  const identity = await db.query(
+    `select u.email,
+      coalesce((select array_agg(role) from public.user_roles where user_id=u.id and is_active=true), ARRAY[]::text[]) roles,
+      (select staff_role from public.staff_members where user_id=u.id and is_active=true limit 1) staff_role,
+      exists(select 1 from public.courier_profiles where user_id=u.id and is_active=true) courier_active
+     from neon_auth."user" u where u.id=$1`,
+    [user.id],
+  );
+  if (!identity.rowCount) fail("Compte utilisateur introuvable.", 404);
+  const account = identity.rows[0];
+  const roles = new Set(account.roles || []);
   const adminEmail = process.env.LAMA_MARKET_ADMIN_EMAIL?.trim().toLowerCase();
-  if (identity.rows[0]?.email && adminEmail && identity.rows[0].email.toLowerCase() === adminEmail) {
-    await db.query("insert into public.user_roles(user_id,role,is_active) values($1,'admin',true) on conflict(user_id,role) do update set is_active=true", [user.id]);
+  if (account.email && adminEmail && account.email.toLowerCase() === adminEmail && !roles.has("admin")) {
+    await db.query(
+      "insert into public.user_roles(user_id,role,is_active) values($1,'admin',true) on conflict(user_id,role) do update set is_active=true",
+      [user.id],
+    );
+    roles.add("admin");
   }
-  const [roles, staff, courier] = await Promise.all([
-    db.query("select role from public.user_roles where user_id=$1 and is_active=true", [user.id]),
-    db.query("select staff_role from public.staff_members where user_id=$1 and is_active=true", [user.id]),
-    db.query("select is_active from public.courier_profiles where user_id=$1", [user.id]),
-  ]);
-  const roleSet = new Set(roles.rows.map(row => row.role));
-  if (roleSet.has("admin")) return { destination: "/admin", primaryRole: "admin" };
-  if (staff.rowCount) return { destination: "/equipe", primaryRole: staff.rows[0].staff_role };
-  if (courier.rows[0]?.is_active && roleSet.has("courier")) return { destination: "/livreur", primaryRole: "courier" };
+  if (roles.has("admin")) return { destination: "/admin", primaryRole: "admin" };
+  if (account.staff_role) return { destination: "/equipe", primaryRole: account.staff_role };
+  if (account.courier_active && roles.has("courier")) return { destination: "/livreur", primaryRole: "courier" };
+  if (!roles.has("customer")) {
+    await db.query(
+      "insert into public.user_roles(user_id,role,is_active) values($1,'customer',true) on conflict(user_id,role) do update set is_active=true",
+      [user.id],
+    );
+  }
   return { destination: "/compte", primaryRole: "customer" };
 });
 
