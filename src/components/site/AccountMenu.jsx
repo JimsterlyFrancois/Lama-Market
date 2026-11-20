@@ -1,10 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { LayoutDashboard, LogOut, UserRound } from "lucide-react";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { authClient, getAccessToken } from "@/lib/auth-client";
 import { getMyAccessContext } from "@/lib/commerce";
 
@@ -12,6 +8,7 @@ export default function AccountMenu() {
   const [user, setUser] = useState(null);
   const [destination, setDestination] = useState("/compte");
   const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -39,8 +36,17 @@ export default function AccountMenu() {
     return () => { active = false; };
   }, []);
 
+  async function logout() {
+    await authClient?.signOut();
+    setUser(null);
+    setOpen(false);
+    window.location.assign("/");
+  }
+
   const trigger = (
-    <button type="button" aria-label="Ouvrir l'espace personnel" title="Espace personnel et professionnel"
+    <button type="button" onClick={() => setOpen(value => !value)}
+      aria-label="Ouvrir l'espace personnel" aria-expanded={open}
+      aria-haspopup="menu" title="Espace personnel et professionnel"
       className="grid h-11 w-11 place-items-center rounded-full border border-border bg-card text-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
       <UserRound className="h-5 w-5" strokeWidth={1.9} aria-hidden="true" />
     </button>
@@ -53,31 +59,29 @@ export default function AccountMenu() {
     </Link>;
   }
 
-  async function logout() {
-    await authClient?.signOut();
-    setUser(null);
-    window.location.assign("/");
-  }
-
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="top" className="w-60">
-        <DropdownMenuLabel className="truncate">{user.name || user.email}</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link to="/compte">Mon compte</Link>
-        </DropdownMenuItem>
-        {destination !== "/compte" && (
-          <DropdownMenuItem asChild>
-            <Link to={destination}><LayoutDashboard className="mr-2 h-4 w-4" /> Espace professionnel</Link>
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={logout}>
-          <LogOut className="mr-2 h-4 w-4" /> Se déconnecter
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="relative">
+      {trigger}
+      {open && (
+        <div role="menu" aria-label="Menu du compte" onKeyDown={event => { if (event.key === "Escape") setOpen(false); }}
+          className="absolute bottom-14 right-0 z-[2100] w-60 rounded-2xl border border-border bg-card p-2 text-foreground shadow-2xl">
+          <p className="truncate px-3 py-2 text-xs font-bold">{user.name || user.email}</p>
+          <div className="my-1 border-t border-border" />
+          <Link role="menuitem" to="/compte" onClick={() => setOpen(false)}
+            className="block rounded-xl px-3 py-2.5 text-sm hover:bg-secondary">Mon compte</Link>
+          {destination !== "/compte" && (
+            <Link role="menuitem" to={destination} onClick={() => setOpen(false)}
+              className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm hover:bg-secondary">
+              <LayoutDashboard className="h-4 w-4" /> Espace professionnel
+            </Link>
+          )}
+          <div className="my-1 border-t border-border" />
+          <button role="menuitem" type="button" onClick={logout}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-secondary">
+            <LogOut className="h-4 w-4" /> Se déconnecter
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
