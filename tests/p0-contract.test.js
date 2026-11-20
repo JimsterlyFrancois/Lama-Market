@@ -84,7 +84,7 @@ test("P1: customers own their saved addresses and only one default address is in
 test("P1: checkout is owner-scoped, idempotent, stock-checked, and redeems coupons after order creation", async () => {
   const commerce = await read("../src/lib/commerce.js");
   const checkout = commerce.slice(commerce.indexOf("export const checkout"), commerce.indexOf("export const getMyOrders"));
-  assert.match(checkout, /idempotency_key=\$1 and customer_id=\$2/);
+  assert.match(checkout, /o\.idempotency_key=\$1 and o\.customer_id=\$2/);
   assert.match(checkout, /for update of p/);
   assert.match(checkout, /stock >= \$2/);
   assert.match(checkout, /discount_total/);
