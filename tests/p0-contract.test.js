@@ -187,7 +187,8 @@ test("P2: login and the professional profile entry are visible and staff access 
   const workspace = await read("../src/routes/espace.jsx");
   assert.match(header,/Connexion/);
   assert.match(menu,/UserRound/);
-  assert.match(menu,/Espace professionnel/);
+  assert.match(menu,/Paramètres et mon compte/);
+  assert.match(menu,/Ouvrir mon espace/);
   assert.match(auth,/validé et recevoir un rôle attribué par l’administrateur principal/);
   assert.match(serverAuth,/requireRole/);
   assert.match(workspace,/navigate\(\{ to: "\/compte", replace: true \}\)/);
