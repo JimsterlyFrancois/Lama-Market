@@ -135,7 +135,7 @@ function AdminPage(){
    const token=await getAccessToken();
    const result=await adminReconcilePendingPayments({data:{token,limit:50}});
    setReconcileResult(result);
-   setMessage(`Vérification terminée : ${result.scanned} paiement(s), ${result.confirmed} confirmé(s), ${result.pending} en attente, ${result.errors} erreur(s).`);
+   setMessage(result.skipped ? result.message : `Vérification terminée : ${result.scanned} paiement(s), ${result.confirmed} confirmé(s), ${result.pending} en attente, ${result.errors} erreur(s).`);
    await load();
   }catch(e){setMessage(e.message||"Impossible de vérifier les paiements.");}
   finally{setBusy(false);}
