@@ -23,7 +23,7 @@ export const emailOtp = managedClient ? {
   verifyEmail: (email, otp) =>
     managedClient.emailOtp.verifyEmail({ email, otp }),
   forgetPassword: (email) =>
-    managedClient.forgetPassword.emailOtp({ email }),
+    managedClient.emailOtp.requestPasswordReset({ email }),
   resetPassword: (email, otp, password) =>
     managedClient.emailOtp.resetPassword({ email, otp, password }),
 } : null;
