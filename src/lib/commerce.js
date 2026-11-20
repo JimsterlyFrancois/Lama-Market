@@ -250,10 +250,20 @@ export const adminAdjustStock = createServerFn({ method: "POST" }).validator((da
   const client = await db.connect();
   try {
     await client.query("begin");
+    const before=await client.query("select name,stock,low_stock_threshold from public.products where id=$1 for update",[data.productId]);
+    if(!before.rowCount)fail("Produit introuvable.");
     const p = await client.query("update public.products set stock=stock+$2,updated_at=now() where id=$1 and stock+$2>=0 returning stock",[data.productId,delta]);
-    if (!p.rowCount) fail("Produit introuvable ou stock négatif interdit.");
+    if (!p.rowCount) fail("Stock négatif interdit.");
     await client.query("insert into public.stock_movements(product_id,quantity_delta,movement_type,note,created_by) values($1,$2,'adjustment',$3,$4)",[data.productId,delta,clean(data.note,300)||"Ajustement manuel",admin.id]);
+    const crossed=Number(before.rows[0].stock)>Number(before.rows[0].low_stock_threshold)&&Number(p.rows[0].stock)<=Number(before.rows[0].low_stock_threshold);
     await client.query("commit");
+    if(crossed){
+      await (await import("./notifications.server")).createAdminNotification(db,{
+        type:"stock_low",title:"Alerte de stock faible",
+        message:"Le stock de "+before.rows[0].name+" est passé sous le seuil fixé ("+p.rows[0].stock+" restant(s)).",
+        data:{productId:data.productId,stock:p.rows[0].stock,threshold:before.rows[0].low_stock_threshold},
+      });
+    }
     return { stock: p.rows[0].stock };
   } catch(e) { await client.query("rollback"); throw e; } finally { client.release(); }
 });
@@ -373,17 +383,28 @@ export const getAdminReports = createServerFn({ method: "GET" }).validator((data
   await requireRole(data.token,["admin"]);
   const db=await getDb();
   const [summary,daily,top,paymentMethods,stock]=await Promise.all([
-    db.query(`select count(*) filter(where payment_status in ('paid','cash_collected','partially_refunded','refunded'))::int paid_orders,
+    db.query(`select count(*) filter(where o.payment_status in ('paid','cash_collected','partially_refunded','refunded'))::int paid_orders,
       count(*)::int total_orders,
-      coalesce(sum(total) filter(where payment_status in ('paid','cash_collected','partially_refunded','refunded')),0)::numeric(12,2) gross_revenue,
-      coalesce(sum(total) filter(where payment_status in ('paid','cash_collected')),0)::numeric(12,2) net_collected,
-      coalesce(avg(total) filter(where payment_status in ('paid','cash_collected')),0)::numeric(12,2) average_order,
-      count(*) filter(where payment_status='pending')::int pending_payments,
-      count(*) filter(where payment_status='failed')::int failed_payments
-      from public.orders`),
-    db.query("select date_trunc('day',created_at)::date day,count(*)::int orders,coalesce(sum(total),0)::numeric(12,2) sales from public.orders where created_at>=now()-interval '90 days' and payment_status in ('paid','cash_collected','partially_refunded','refunded') and status<>'cancelled' group by 1 order by 1"),
-    db.query("select oi.product_name,sum(oi.quantity)::int quantity,sum(oi.line_total)::numeric(12,2) sales from public.order_items oi join public.orders o on o.id=oi.order_id where o.payment_status in ('paid','cash_collected','partially_refunded','refunded') and o.status<>'cancelled' group by oi.product_name order by quantity desc limit 20"),
-    db.query("select p.method,count(*)::int transactions,coalesce(sum(p.amount) filter(where p.status in ('paid','cash_collected','partially_refunded','refunded')),0)::numeric(12,2) collected,count(*) filter(where p.status='pending')::int pending,count(*) filter(where p.status='failed')::int failed from public.payments p group by p.method order by p.method"),
+      coalesce(sum(o.total) filter(where o.payment_status in ('paid','cash_collected','partially_refunded','refunded')),0)::numeric(12,2) gross_revenue,
+      coalesce(sum(o.total-coalesce((select sum(r.amount) from public.payment_refunds r where r.order_id=o.id and r.status='completed'),0))
+        filter(where o.payment_status in ('paid','cash_collected','partially_refunded','refunded')),0)::numeric(12,2) net_collected,
+      coalesce(avg(o.total-coalesce((select sum(r.amount) from public.payment_refunds r where r.order_id=o.id and r.status='completed'),0))
+        filter(where o.payment_status in ('paid','cash_collected','partially_refunded') and o.total>coalesce((select sum(r.amount) from public.payment_refunds r where r.order_id=o.id and r.status='completed'),0)),0)::numeric(12,2) average_order,
+      count(*) filter(where o.payment_status='pending')::int pending_payments,
+      count(*) filter(where o.payment_status='failed')::int failed_payments
+      from public.orders o`),
+    db.query(`select date_trunc('day',o.created_at)::date day,count(*)::int orders,
+      coalesce(sum(o.total-coalesce((select sum(r.amount) from public.payment_refunds r where r.order_id=o.id and r.status='completed'),0)),0)::numeric(12,2) sales
+      from public.orders o where o.created_at>=now()-interval '90 days'
+        and o.payment_status in ('paid','cash_collected','partially_refunded','refunded')
+        and o.status<>'cancelled' group by 1 order by 1`),
+    db.query("select oi.product_name,sum(oi.quantity)::int quantity,sum(oi.line_total)::numeric(12,2) sales from public.order_items oi join public.orders o on o.id=oi.order_id where o.payment_status in ('paid','cash_collected','partially_refunded','refunded') and o.status<>'cancelled' and o.delivery_status<>'returned' group by oi.product_name order by quantity desc limit 20"),
+    db.query(`select p.method,count(*)::int transactions,
+      coalesce(sum(p.amount-coalesce((select sum(r.amount) from public.payment_refunds r where r.payment_id=p.id and r.status='completed'),0))
+        filter(where p.status in ('paid','cash_collected','partially_refunded','refunded')),0)::numeric(12,2) collected,
+      count(*) filter(where p.status='pending')::int pending,
+      count(*) filter(where p.status='failed')::int failed
+      from public.payments p group by p.method order by p.method`),
     db.query("select id,name,sku,category,stock,low_stock_threshold,is_active from public.products where deleted_at is null order by stock asc,name limit 500"),
   ]);
   return {summary:summary.rows[0],daily:daily.rows,topProducts:top.rows,paymentMethods:paymentMethods.rows,stock:stock.rows};
