@@ -362,13 +362,13 @@ function AdminPage(){
       <Stat label="Paiements échoués" value={reports?.summary?.failed_payments??0}/>
      </div>
      <div className="report-export-actions">
-      <button className="text-button" onClick={()=>exportCsv("lama-market-ventes-90-jours.csv",reports?.daily||[],[{label:"Date",get:r=>r.day},{label:"Commandes",get:r=>r.orders},{label:"Ventes HTG",get:r=>r.sales}])}>Exporter ventes CSV</button>
+      <button className="text-button" onClick={()=>exportCsv("lama-market-ventes-90-jours.csv",reports?.daily||[],[{label:"Date",get:r=>r.sales_day},{label:"Commandes",get:r=>r.orders},{label:"Ventes HTG",get:r=>r.sales}])}>Exporter ventes CSV</button>
       <button className="text-button" onClick={()=>exportCsv("lama-market-produits-vendus.csv",reports?.topProducts||[],[{label:"Produit",get:r=>r.product_name},{label:"Quantité",get:r=>r.quantity},{label:"Ventes HTG",get:r=>r.sales}])}>Exporter produits CSV</button>
       <button className="text-button" onClick={()=>exportCsv("lama-market-stocks.csv",reports?.stock||[],[{label:"Produit",get:r=>r.name},{label:"SKU",get:r=>r.sku},{label:"Catégorie",get:r=>r.category},{label:"Stock",get:r=>r.stock},{label:"Seuil",get:r=>r.low_stock_threshold},{label:"Actif",get:r=>r.is_active}])}>Exporter stocks CSV</button>
       <button className="text-button" onClick={()=>exportCsv("lama-market-paiements.csv",payments,[{label:"Commande",get:r=>r.order_number},{label:"Client",get:r=>r.customer_name},{label:"Méthode",get:r=>r.method},{label:"Fournisseur",get:r=>r.provider},{label:"Montant HTG",get:r=>r.amount},{label:"Statut",get:r=>r.status},{label:"Référence",get:r=>r.external_reference},{label:"Date",get:r=>r.created_at}])}>Exporter paiements CSV</button>
      </div>
      <h3>Historique des ventes</h3>
-     <div className="report-table-wrap"><table className="report-table"><thead><tr><th>Date</th><th>Commandes encaissées</th><th>Ventes HTG</th></tr></thead><tbody>{reports?.daily.map(d=><tr key={d.day}><td>{new Date(d.day).toLocaleDateString("fr-FR")}</td><td>{d.orders}</td><td>{money.format(Number(d.sales))}</td></tr>)}</tbody></table></div>
+     <div className="report-table-wrap"><table className="report-table"><thead><tr><th>Date</th><th>Commandes encaissées</th><th>Ventes HTG</th></tr></thead><tbody>{reports?.daily.map(d=><tr key={d.sales_day}><td>{new Date(d.sales_day).toLocaleDateString("fr-FR")}</td><td>{d.orders}</td><td>{money.format(Number(d.sales))}</td></tr>)}</tbody></table></div>
      <h3>Produits les plus vendus</h3>
      {(reports?.topProducts||[]).map((p,i)=><div className="table-line" key={p.product_name}><span>{i+1}. {p.product_name}</span><span>{p.quantity} vendu(s)</span><strong>{money.format(Number(p.sales))}</strong></div>)}
      <h3>État des stocks</h3>
