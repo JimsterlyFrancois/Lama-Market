@@ -1,15 +1,15 @@
 import { useEffect,useState } from "react";
 import { createFileRoute,Link } from "@tanstack/react-router";
 import { getAccessToken } from "../lib/auth-client";
-import { getAdminDashboard,getAdminDeliveries,getAdminReports,adminCreateProduct,adminCreateDeliveryZone,adminCreateCourier,adminAssignCourier,adminUpdateOrderStatus,adminAdjustStock,getProductImageUploadUrl,adminUpdateProduct,adminArchiveProduct } from "../lib/commerce";
+import { getAdminDashboard,getAdminDeliveries,getAdminReports,adminCreateProduct,adminCreateDeliveryZone,adminCreateCourier,adminAssignCourier,adminUpdateOrderStatus,adminAdjustStock,getProductImageUploadUrl,adminUpdateProduct,adminArchiveProduct,getStorefrontSettings,getCoverImageUploadUrl,saveStorefrontCover } from "../lib/commerce";
 export const Route=createFileRoute("/admin")({component:AdminPage});
 const money=new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
 function AdminPage(){
- const [data,setData]=useState(null),[deliveries,setDeliveries]=useState([]),[reports,setReports]=useState(null),[message,setMessage]=useState("Chargement du tableau de bord…"),[busy,setBusy]=useState(false);
+ const [data,setData]=useState(null),[deliveries,setDeliveries]=useState([]),[reports,setReports]=useState(null),[message,setMessage]=useState("Chargement du tableau de bord…"),[busy,setBusy]=useState(false),[coverUrl,setCoverUrl]=useState("");
  const [product,setProduct]=useState({name:"",category:"epicerie",price:"",stock:"",description:"",imageUrl:"",imageKey:"",sku:"",isActive:true});
  const [zone,setZone]=useState({name:"",city:"Cap-Haïtien",area:"",fee:"",freeFrom:"",minDays:"1",maxDays:"3"});
  const [courier,setCourier]=useState({email:"",displayName:"",phone:"",employmentType:"mandated"});
- async function load(){try{const token=await getAccessToken();const [d,l,r]=await Promise.all([getAdminDashboard({data:{token}}),getAdminDeliveries({data:{token}}),getAdminReports({data:{token}})]);setData(d);setDeliveries(l);setReports(r);setMessage("");}catch(e){setMessage(e.message);}}
+ async function load(){try{const token=await getAccessToken();const [d,l,r,appearance]=await Promise.all([getAdminDashboard({data:{token}}),getAdminDeliveries({data:{token}}),getAdminReports({data:{token}}),getStorefrontSettings()]);setData(d);setDeliveries(l);setReports(r);setCoverUrl(appearance.heroCoverUrl||"");setMessage("");}catch(e){setMessage(e.message);}}
  useEffect(()=>{load();},[]);
  async function act(fn,payload){setBusy(true);setMessage("");try{const token=await getAccessToken();await fn({data:{token,...payload}});setMessage("Modification enregistrée.");await load();}catch(e){setMessage(e.message||"Opération impossible.");}finally{setBusy(false);}}
  async function uploadImage(event){
@@ -25,10 +25,30 @@ function AdminPage(){
   }catch(e){setMessage(e.message||"Envoi impossible.");}
   finally{setBusy(false);event.target.value="";}
  }
+ async function uploadCover(event){
+  const file=event.target.files?.[0];if(!file)return;
+  if(file.type!=="image/gif"){setMessage("Sélectionne un fichier GIF animé.");event.target.value="";return;}
+  setBusy(true);setMessage("");
+  try{
+   const token=await getAccessToken();
+   const signed=await getCoverImageUploadUrl({data:{token,contentType:file.type,size:file.size}});
+   const response=await fetch(signed.uploadUrl,{method:"PUT",headers:signed.headers,body:file});
+   if(!response.ok)throw new Error("Le transfert du GIF vers Neon a échoué.");
+   const saved=await saveStorefrontCover({data:{token,publicUrl:signed.publicUrl}});
+   setCoverUrl(saved.heroCoverUrl);
+   setMessage("La couverture GIF animée est publiée et active sur la boutique.");
+  }catch(e){setMessage(e.message||"Import de la couverture impossible.");}
+  finally{setBusy(false);event.target.value="";}
+ }
  async function createProduct(e){e.preventDefault();await act(adminCreateProduct,{...product,price:Number(product.price),stock:Number(product.stock)});setProduct({name:"",category:"epicerie",price:"",stock:"",description:"",imageUrl:"",imageKey:"",sku:"",isActive:true});}
  async function createZone(e){e.preventDefault();await act(adminCreateDeliveryZone,{...zone,fee:Number(zone.fee),freeFrom:zone.freeFrom?Number(zone.freeFrom):null});}
  async function createCourier(e){e.preventDefault();await act(adminCreateCourier,courier);setCourier({email:"",displayName:"",phone:"",employmentType:"mandated"});}
  return <main className="commerce-page"><header className="commerce-header"><Link to="/">← Boutique</Link><strong className="commerce-brand"><img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" />Administration Lama Market</strong><Link to="/equipe">Espace équipe</Link><Link to="/compte">Mon compte</Link></header><div className="commerce-container"><div className="commerce-title"><span>GESTION DE LA BOUTIQUE</span><h1>Tableau de bord</h1><p>Produits, commandes, stocks, livreurs et performances.</p></div>{message&&<div className="form-message admin-notice">{message}</div>}{data&&<>
+ <section className="commerce-panel admin-cover-panel">
+  <div className="admin-cover-heading"><div><h2>Couverture animée de la boutique</h2><p>Importer le GIF optimisé en lecture accélérée 2×. Format GIF uniquement, 5 Mo maximum.</p></div>{coverUrl&&<span className="cover-current-label">Couverture configurée</span>}</div>
+  {coverUrl&&<img className="admin-cover-preview" src={coverUrl} alt="Aperçu de la couverture actuelle" />}
+  <label>Choisir le fichier GIF<input type="file" accept="image/gif,.gif" onChange={uploadCover} disabled={busy}/></label>
+ </section>
  <div className="admin-stat-grid"><Stat label="Commandes" value={data.stats.total_orders}/><Stat label="Commandes actives" value={data.stats.active_orders}/><Stat label="Recettes encaissées" value={money.format(Number(data.stats.revenue))}/><Stat label="Alertes de stock" value={data.lowStock.length}/></div>
  <div className="admin-grid">
  <section className="commerce-panel"><h2>Ajouter un produit</h2><form className="account-form" onSubmit={createProduct}><label>Nom<input required value={product.name} onChange={e=>setProduct({...product,name:e.target.value})}/></label><label>Catégorie<select value={product.category} onChange={e=>setProduct({...product,category:e.target.value})}>{["epicerie","maison","beaute","electronique","mode","bons-plans"].map(x=><option key={x} value={x}>{x}</option>)}</select></label><label>Prix HTG<input type="number" min="0" step="0.01" required value={product.price} onChange={e=>setProduct({...product,price:e.target.value})}/></label><label>Stock initial<input type="number" min="0" required value={product.stock} onChange={e=>setProduct({...product,stock:e.target.value})}/></label><label>SKU<input value={product.sku} onChange={e=>setProduct({...product,sku:e.target.value})}/></label><label>Image du produit (JPG, PNG, WebP · 5 Mo max)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadImage}/></label>{product.imageUrl&&<img src={product.imageUrl} alt="Aperçu du produit" className="admin-image-preview"/>}<label>Ou URL d'image externe<input value={product.imageUrl} onChange={e=>setProduct({...product,imageUrl:e.target.value,imageKey:""})}/></label><label>Description<textarea value={product.description} onChange={e=>setProduct({...product,description:e.target.value})}/></label><label className="check-label"><input type="checkbox" checked={product.isActive} onChange={e=>setProduct({...product,isActive:e.target.checked})}/> Publier immédiatement</label><button className="account-submit" disabled={busy}>Enregistrer le produit</button></form></section>
