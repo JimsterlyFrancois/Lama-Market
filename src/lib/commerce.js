@@ -431,8 +431,10 @@ export const adminUpdateProduct = createServerFn({ method: "POST" }).validator((
   const name=clean(data.name,180), category=clean(data.category,80), price=Number(data.price);
   if(!name||!category||!Number.isFinite(price)||price<0) fail("Nom, catégorie et prix valides requis.");
   const db=await getDb();
+  const categoryRow=await db.query("select slug from public.categories where slug=$1 and is_active=true",[category]);
+  if(!categoryRow.rowCount)fail("Sélectionnez une catégorie active.");
   const oldPrice = data.oldPrice === "" || data.oldPrice == null ? null : Number(data.oldPrice);
-  if (oldPrice !== null && (!Number.isFinite(oldPrice) || oldPrice < price)) fail("Le prix normal doit être supérieur ou égal au prix actuel.");
+  if (oldPrice !== null && (!Number.isFinite(oldPrice) || oldPrice <= price)) fail("Le prix normal doit être supérieur au prix actuel.");
   const discountEndsAt = data.discountEndsAt ? new Date(data.discountEndsAt) : null;
   if (discountEndsAt && Number.isNaN(discountEndsAt.getTime())) fail("Date de fin promotionnelle invalide.");
   const result=await db.query("update public.products set name=$2,description=$3,category=$4,price=$5,old_price=$6,discount_ends_at=$7,image_url=$8,is_active=$9,low_stock_threshold=$10,updated_at=now() where id=$1 and deleted_at is null returning id",[data.productId,name,clean(data.description,2000)||null,category,price,oldPrice,discountEndsAt,clean(data.imageUrl,1000)||null,data.isActive===true,Math.max(0,Number(data.lowStockThreshold)||5)]);
