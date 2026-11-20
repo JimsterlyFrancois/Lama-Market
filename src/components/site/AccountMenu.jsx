@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { LayoutDashboard, LogOut, UserRound } from "lucide-react";
-import { authClient, getAccessToken } from "@/lib/auth-client";
-import { getMyAccessContext } from "@/lib/commerce";
+import { authClient, getAccessToken } from "../../lib/auth-client";
+import { getMyAccessContext } from "../../lib/commerce";
 
 export default function AccountMenu() {
   const [user, setUser] = useState(null);
