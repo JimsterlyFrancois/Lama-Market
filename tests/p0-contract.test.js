@@ -177,11 +177,12 @@ test("P2: payment signature verification uses raw-body HMAC and constant-time eq
 test("P2: mobile wallet payments remain disabled without merchant and webhook credentials", async () => {
   const payments = await read("../src/lib/payments.server.js");
   const commerce = await read("../src/lib/commerce.js");
+  const gateway = await read("../src/lib/payments.server.js");
   const cart = await read("../src/routes/panier.jsx");
   assert.match(payments,/TRANZAK_API_KEY\s*&&\s*process\.env\.TRANZAK_WEBHOOK_SECRET/);
   assert.match(payments,/cash_on_delivery:\s*true/);
   assert.match(commerce,/paymentAvailability\[paymentMethod\]/);
-  assert.match(commerce,/payment_method/);
+  assert.match(gateway,/payment_method/);
   assert.match(cart,/paymentOptions\.moncash/);
   assert.match(cart,/paymentOptions\.natcash/);
 });
