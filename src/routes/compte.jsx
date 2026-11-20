@@ -1,7 +1,7 @@
 import { useEffect,useState } from "react";
 import { createFileRoute,Link } from "@tanstack/react-router";
 import { authClient,getAccessToken } from "../lib/auth-client";
-import { getMyProfile,updateMyProfile,getMyNotifications,getMyAddresses,saveMyAddress,deleteMyAddress } from "../lib/commerce";
+import { getMyProfile,updateMyProfile,getMyNotifications,getMyAddresses,saveMyAddress,deleteMyAddress,getMyNotificationPreferences,updateMyNotificationPreferences } from "../lib/commerce";
 export const Route=createFileRoute("/compte")({component:ProfilePage});
 const emptyAddress={recipientName:"",phone:"",addressLine:"",department:"",city:"Cap-Haïtien",area:"",landmark:"",instructions:"",isDefault:false};
 function ProfilePage(){
@@ -9,11 +9,12 @@ function ProfilePage(){
  const [notice,setNotice]=useState(""),[notifications,setNotifications]=useState([]),[addresses,setAddresses]=useState([]);
  const [address,setAddress]=useState(emptyAddress),[editingAddressId,setEditingAddressId]=useState("");
  const [busy,setBusy]=useState(false);
+ const [preferences,setPreferences]=useState({email_enabled:true,sms_enabled:false});
  async function load(){
   try{
    const token=await getAccessToken();
-   const [p,n,a]=await Promise.all([getMyProfile({data:{token}}),getMyNotifications({data:{token}}),getMyAddresses({data:{token}})]);
-   setProfile(p.profile||{phone:"",preferred_name:""});setEmail(p.user.email||"");setNotifications(n);setAddresses(a);setNotice("");
+   const [p,n,a,prefs]=await Promise.all([getMyProfile({data:{token}}),getMyNotifications({data:{token}}),getMyAddresses({data:{token}}),getMyNotificationPreferences({data:{token}})]);
+   setProfile(p.profile||{phone:"",preferred_name:""});setEmail(p.user.email||"");setNotifications(n);setAddresses(a);setPreferences(prefs);setNotice("");
   }catch(e){setNotice(e.message);}
  }
  useEffect(()=>{load();},[]);
@@ -30,6 +31,12 @@ function ProfilePage(){
  async function removeAddress(id){
   if(!window.confirm("Supprimer cette adresse de livraison ?"))return;
   setBusy(true);try{const token=await getAccessToken();await deleteMyAddress({data:{token,addressId:id}});await load();setNotice("Adresse supprimée.");}catch(e){setNotice(e.message);}finally{setBusy(false);}
+ }
+ async function savePreferences(next){
+  setPreferences(next);setBusy(true);
+  try{const token=await getAccessToken();const saved=await updateMyNotificationPreferences({data:{token,emailEnabled:next.email_enabled}});setPreferences(saved);setNotice("Préférences de notification enregistrées.");}
+  catch(e){setNotice(e.message||"Impossible d'enregistrer les préférences.");}
+  finally{setBusy(false);}
  }
  async function logout(){await authClient?.signOut();window.location.href="/";}
  return <main className="commerce-page">
@@ -76,8 +83,20 @@ function ProfilePage(){
     </form>
    </section>
    <section className="commerce-panel">
+    <h2>Préférences de notification</h2>
+    <p className="muted-note">Choisissez les informations que Lama Market peut vous envoyer par e-mail. Les alertes importantes restent consultables dans votre compte.</p>
+    <label className="notification-preference-row">
+     <span><strong>Notifications par e-mail</strong><small>Commandes, paiements, préparation, livraison et remboursements.</small></span>
+     <input type="checkbox" checked={preferences.email_enabled} disabled={busy} onChange={e=>savePreferences({...preferences,email_enabled:e.target.checked})}/>
+    </label>
+    <label className="notification-preference-row is-disabled">
+     <span><strong>Notifications par SMS</strong><small>Disponible ultérieurement, après activation d'un fournisseur SMS.</small></span>
+     <input type="checkbox" checked={false} disabled aria-label="Notifications SMS non disponibles"/>
+    </label>
+   </section>
+   <section className="commerce-panel">
     <h2>Accès rapides</h2><p><Link to="/espace">Mon espace autorisé →</Link></p><p><Link to="/commandes">Mes commandes →</Link></p><p><Link to="/panier">Mon panier →</Link></p>
-    <h3>Notifications récentes</h3>{notifications.slice(0,6).map(n=><div className="notification-row" key={n.id}><strong>{n.title}</strong><p>{n.message}</p></div>)}
+    <h3>Notifications récentes</h3>{notifications.slice(0,10).map(n=><div className="notification-row" key={n.id}><strong>{n.title}</strong><p>{n.message}</p><small>{new Date(n.created_at).toLocaleString("fr-FR")} · E-mail : {n.email_status||"non envoyé"}{n.email_error?" · "+n.email_error:""}</small></div>)}
    </section>
   </div>
  </main>;
