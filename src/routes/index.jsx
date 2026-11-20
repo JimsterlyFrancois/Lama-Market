@@ -34,6 +34,7 @@ function formatPrice(value) {
 
 function HomePage() {
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [coverUrl, setCoverUrl] = useState("/images/lama-market-cover.webp");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -47,6 +48,7 @@ function HomePage() {
     try {
       const [result, appearance] = await Promise.all([getCatalog(), getStorefrontSettings()]);
       setProducts(result.products ?? []);
+      setCategories(result.categories ?? []);
       setCoverUrl(appearance.heroCoverUrl || "/images/lama-market-cover.webp");
     } catch (loadError) {
       setError(loadError?.message || "Impossible de charger le catalogue pour le moment.");
@@ -147,7 +149,7 @@ function HomePage() {
         </div>
 
         <div className="category-list" id="categories" aria-label="Filtrer par catégorie">
-          {CATEGORIES.map((item) => (
+          {[{value:"tous",label:"Tous les produits"},...categories.map((item)=>({value:item.slug,label:item.name}))].map((item) => (
             <button key={item.value} type="button" className={category === item.value ? "category-chip selected" : "category-chip"} onClick={() => setCategory(item.value)}>
               {item.label}
             </button>
@@ -187,12 +189,14 @@ function HomePage() {
 }
 
 function ProductCard({ product, onAdd }) {
-  const categoryName = CATEGORIES.find((item) => item.value === product.category)?.label || product.category;
+  const categoryName = product.category_name || CATEGORIES.find((item) => item.value === product.category)?.label || product.category;
+  const gallery = Array.isArray(product.images) ? product.images : [];
+  const mainImage = gallery.find((image) => image.isPrimary)?.url || gallery[0]?.url || product.image_url;
   const available = Number(product.stock ?? 0) > 0;
   return (
     <article className="product-card">
       <div className="product-image-wrap">
-        {product.image_url ? <img className="product-image" src={product.image_url} alt={product.name} loading="lazy" /> : <div className="product-placeholder"><img src="/images/lama-market-logo.svg" alt="" className="product-placeholder-logo" width="52" height="52" /><span>Lama Market</span></div>}
+        {mainImage ? <img className="product-image" src={mainImage} alt={product.name} loading="lazy" /> : <div className="product-placeholder"><img src="/images/lama-market-logo.svg" alt="" className="product-placeholder-logo" width="52" height="52" /><span>Lama Market</span></div>}
         {product.badge && <span className="product-badge">{product.badge}</span>}
         {!available && <span className="stock-badge">Épuisé</span>}
       </div>
@@ -201,7 +205,7 @@ function ProductCard({ product, onAdd }) {
         <h3>{product.name}</h3>
         {product.description && <p className="product-description">{product.description}</p>}
         <div className="product-bottom">
-          <div><strong className="product-price">{formatPrice(product.price)}</strong>{product.old_price && <del>{formatPrice(product.old_price)}</del>}</div>
+          <div><strong className="product-price">{formatPrice(product.price)}</strong>{product.old_price && Number(product.old_price) > Number(product.price) && <del>{formatPrice(product.old_price)}</del>}</div>
           <span className={available ? "stock-status" : "stock-status unavailable"}>{available ? "Disponible" : "Indisponible"}</span>
         </div>
         <button className="add-cart-button" type="button" disabled={!available} onClick={onAdd}>Ajouter au panier</button>
