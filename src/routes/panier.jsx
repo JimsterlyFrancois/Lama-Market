@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { getAccessToken } from "../lib/auth-client";
-import { getMyCart, updateCartItem, removeCartItem, checkout } from "../lib/commerce";
+import { getMyCart, getMyAddresses, getCheckoutQuote, updateCartItem, removeCartItem, checkout } from "../lib/commerce";
 
 export const Route = createFileRoute("/panier")({ component: CartPage });
 const money = new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
@@ -9,6 +9,11 @@ function CartPage(){
   const navigate=useNavigate();
   const idempotencyKey=useRef(crypto.randomUUID());
   const [items,setItems]=useState([]);
+  const [addresses,setAddresses]=useState([]);
+  const [addressId,setAddressId]=useState("");
+  const [couponCode,setCouponCode]=useState("");
+  const [quote,setQuote]=useState(null);
+  const [quoteMessage,setQuoteMessage]=useState("");
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState("");
@@ -16,7 +21,7 @@ function CartPage(){
   const total=useMemo(()=>items.reduce((sum,item)=>sum+Number(item.price)*item.quantity,0),[items]);
   async function load(){
     setLoading(true);setMessage("");
-    try{const token=await getAccessToken();setItems(await getMyCart({data:{token}}));}
+    try{const token=await getAccessToken();const [cartRows,savedAddresses]=await Promise.all([getMyCart({data:{token}}),getMyAddresses({data:{token}})]);setItems(cartRows);setAddresses(savedAddresses);const primary=savedAddresses.find(a=>a.is_default);if(primary&&!addressId){setAddressId(primary.id);setAddress({recipientName:primary.recipient_name,phone:primary.phone,addressLine:primary.address_line,city:primary.city,area:primary.area||"",landmark:primary.landmark||"",instructions:primary.delivery_instructions||""});}}
     catch(e){setMessage(e.message||"Connectez-vous pour consulter votre panier.");}
     finally{setLoading(false);}
   }
@@ -28,11 +33,23 @@ function CartPage(){
   async function remove(item){
     const token=await getAccessToken();await removeCartItem({data:{token,itemId:item.id}});await load();
   }
+  function editAddress(field,value){setAddressId("");setAddress(current=>({...current,[field]:value}));setQuote(null);}
+  function chooseAddress(id){
+    setAddressId(id);setQuote(null);
+    const selected=addresses.find(a=>a.id===id);
+    if(selected)setAddress({recipientName:selected.recipient_name,phone:selected.phone,addressLine:selected.address_line,city:selected.city,area:selected.area||"",landmark:selected.landmark||"",instructions:selected.delivery_instructions||""});
+    else setAddress({recipientName:"",phone:"",addressLine:"",city:"Cap-Haïtien",area:"",landmark:"",instructions:""});
+  }
+  async function calculateQuote(){
+    setQuoteMessage("");setQuote(null);
+    try{const token=await getAccessToken();const result=await getCheckoutQuote({data:{token,city:address.city,area:address.area,couponCode}});setQuote(result);}
+    catch(e){setQuoteMessage(e.message||"Impossible de calculer le total.");}
+  }
   async function order(event){
     event.preventDefault();setBusy(true);setMessage("");
     try{
       const token=await getAccessToken();
-      const result=await checkout({data:{token,address,paymentMethod:"cash_on_delivery",idempotencyKey:idempotencyKey.current}});
+      const result=await checkout({data:{token,address,addressId:addressId||undefined,couponCode,paymentMethod:"cash_on_delivery",idempotencyKey:idempotencyKey.current}});
       navigate({to:"/commandes",search:{newOrder:result.orderNumber}});
     }catch(e){setMessage(e.message||"Impossible de valider la commande.");}
     finally{setBusy(false);}
@@ -54,16 +71,21 @@ function CartPage(){
           <section className="commerce-panel checkout-panel">
             <h2>Livraison et paiement</h2>
             <form className="account-form" onSubmit={order}>
-              <label>Nom du destinataire<input required value={address.recipientName} onChange={e=>setAddress({...address,recipientName:e.target.value})}/></label>
-              <label>Téléphone<input required value={address.phone} onChange={e=>setAddress({...address,phone:e.target.value})}/></label>
-              <label>Adresse complète<input required value={address.addressLine} onChange={e=>setAddress({...address,addressLine:e.target.value})}/></label>
-              <label>Ville<input required value={address.city} onChange={e=>setAddress({...address,city:e.target.value})}/></label>
-              <label>Quartier / zone<input value={address.area} onChange={e=>setAddress({...address,area:e.target.value})}/></label>
-              <label>Repère (facultatif)<input value={address.landmark} onChange={e=>setAddress({...address,landmark:e.target.value})}/></label>
-              <label>Instructions (facultatif)<textarea value={address.instructions} onChange={e=>setAddress({...address,instructions:e.target.value})}/></label>
+              <label>Adresse enregistrée<select value={addressId} onChange={e=>chooseAddress(e.target.value)}><option value="">Saisir une nouvelle adresse</option>{addresses.map(a=><option key={a.id} value={a.id}>{a.recipient_name} · {a.address_line}, {a.city}{a.is_default?" · Par défaut":""}</option>)}</select></label>
+              <label>Nom du destinataire<input required value={address.recipientName} onChange={e=>editAddress("recipientName",e.target.value)}/></label>
+              <label>Téléphone<input required value={address.phone} onChange={e=>editAddress("phone",e.target.value)}/></label>
+              <label>Adresse complète<input required value={address.addressLine} onChange={e=>editAddress("addressLine",e.target.value)}/></label>
+              <label>Ville<input required value={address.city} onChange={e=>editAddress("city",e.target.value)}/></label>
+              <label>Quartier / zone<input value={address.area} onChange={e=>editAddress("area",e.target.value)}/></label>
+              <label>Repère (facultatif)<input value={address.landmark} onChange={e=>editAddress("landmark",e.target.value)}/></label>
+              <label>Instructions (facultatif)<textarea value={address.instructions} onChange={e=>editAddress("instructions",e.target.value)}/></label>
               <div className="payment-choice"><strong>Paiement à la livraison</strong><span>Vous réglez votre commande au livreur lors de la réception.</span></div>
-              <div className="cart-total"><span>Sous-total estimé</span><strong>{money.format(total)}</strong></div>
-              <small>Les frais de livraison seront calculés selon la zone configurée par Lama Market.</small>
+              <label>Code promotionnel (facultatif)<input value={couponCode} onChange={e=>{setCouponCode(e.target.value.toUpperCase());setQuote(null);}} placeholder="Ex. LAMA10"/></label>
+              <button type="button" className="text-button" onClick={calculateQuote}>Calculer la livraison et la remise</button>
+              <div className="cart-total"><span>Sous-total</span><strong>{money.format(total)}</strong></div>
+              {quote&&<><div className="cart-total"><span>Livraison</span><strong>{quote.deliveryFee===null?"Zone à vérifier":money.format(Number(quote.deliveryFee))}</strong></div><div className="cart-total"><span>Remise</span><strong>− {money.format(Number(quote.discount))}</strong></div><div className="cart-total"><span>Total estimé</span><strong>{quote.total===null?"—":money.format(Number(quote.total))}</strong></div></>}
+              {quoteMessage&&<div className="form-message" role="alert">{quoteMessage}</div>}
+              {!quote&&<small>Calculez le total avant confirmation. Le montant définitif est recalculé et vérifié côté serveur.</small>}
               {message&&<div className="form-message" role="alert">{message}</div>}
               <button className="account-submit" disabled={busy}>{busy?"Validation…":"Confirmer la commande"}</button>
             </form>
