@@ -393,7 +393,7 @@ export const getAdminReports = createServerFn({ method: "GET" }).validator((data
       count(*) filter(where o.payment_status='pending')::int pending_payments,
       count(*) filter(where o.payment_status='failed')::int failed_payments
       from public.orders o`),
-    db.query(`select date_trunc('day',o.created_at)::date day,count(*)::int orders,
+    db.query(`select date_trunc('day',o.created_at)::date as sales_day,count(*)::int orders,
       coalesce(sum(o.total-coalesce((select sum(r.amount) from public.payment_refunds r where r.order_id=o.id and r.status='completed'),0)),0)::numeric(12,2) sales
       from public.orders o where o.created_at>=now()-interval '90 days'
         and o.payment_status in ('paid','cash_collected','partially_refunded','refunded')
