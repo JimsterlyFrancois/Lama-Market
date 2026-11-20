@@ -158,59 +158,38 @@ test("P1: administrators can maintain and deactivate delivery zones and rates", 
 });
 
 
-test("P2: payment signature verification uses raw-body HMAC and constant-time equality", async () => {
-  const { createHmac } = await import("node:crypto");
-  const { verifyHmacSha256, sameMoney, moneyToCents, tranzakEventKey } = await import("../src/lib/payment-security.js");
-  const raw = Buffer.from('{"event":"payment.success","data":{"amount":"100.00"}}');
-  const secret = "test-webhook-secret";
-  const signature = createHmac("sha256",secret).update(raw).digest("hex");
-  assert.equal(verifyHmacSha256(raw,signature,secret),true);
-  assert.equal(verifyHmacSha256(Buffer.from(raw.toString()+" "),signature,secret),false);
-  assert.equal(verifyHmacSha256(raw,signature,"wrong-secret"),false);
-  assert.equal(sameMoney("100.00","100"),true);
-  assert.equal(sameMoney("100.01","100"),false);
-  assert.equal(moneyToCents("1.25"),125);
-  assert.equal(moneyToCents("1.234"),null);
-  assert.equal(tranzakEventKey("payment.success","tx-1"),"tranzak:payment.success:tx-1");
-});
-
-test("P2: mobile wallet payments remain disabled without merchant and webhook credentials", async () => {
+test("P2: mobile payments stay disabled until direct official MonCash and NatCash APIs are configured", async () => {
   const payments = await read("../src/lib/payments.server.js");
   const commerce = await read("../src/lib/commerce.js");
-  const gateway = await read("../src/lib/payments.server.js");
   const cart = await read("../src/routes/panier.jsx");
-  assert.match(payments,/TRANZAK_API_KEY\s*&&\s*process\.env\.TRANZAK_WEBHOOK_SECRET/);
+  assert.match(payments,/moncash:\s*false/);
+  assert.match(payments,/natcash:\s*false/);
   assert.match(payments,/cash_on_delivery:\s*true/);
-  assert.match(commerce,/paymentAvailability\[paymentMethod\]/);
-  assert.match(gateway,/payment_method/);
+  assert.doesNotMatch(payments,/api\.tranzak\.co|TRANZAK_API_KEY|X-Tranzak-Signature/i);
+  assert.match(commerce,/paymentMethod !== "cash_on_delivery"/);
+  assert.match(commerce,/provider: null/);
   assert.match(cart,/paymentOptions\.moncash/);
   assert.match(cart,/paymentOptions\.natcash/);
-});
+ });
 
-test("P2: payment webhooks validate signatures, reference, currency, amount and duplicate events", async () => {
-  const route = await read("../src/routes/api.webhooks.tranzak.jsx");
-  const payments = await read("../src/lib/payments.server.js");
-  assert.match(route,/request\.arrayBuffer\(\)/);
-  assert.match(route,/X-Tranzak-Signature/);
-  assert.match(payments,/verifyHmacSha256\(rawBody, signature, secret\)/);
-  assert.match(payments,/sameMoney\(data\.amount, row\.total\)/);
-  assert.match(payments,/data\.currency !== "HTG"/);
-  assert.match(payments,/row\.order_number !== reference/);
-  assert.match(payments,/on conflict\(provider_event_id\) do nothing/);
-  assert.match(payments,/payment\.success/);
-  assert.match(payments,/payment\.failed/);
-});
+test("P2: the storefront has no third-party payment webhook or gateway implementation", async () => {
+  const commerce = await read("../src/lib/commerce.js");
+  assert.doesNotMatch(commerce,/startTranzakPayment|reconcileTranzakPayment|tranzak/i);
+  await assert.rejects(access(new URL("../src/routes/api.webhooks.tranzak.jsx", import.meta.url)));
+  assert.match(commerce,/paymentStatus/);
+ });
 
-test("P2: server payment reconciliation never trusts the browser return URL", async () => {
-  const payments = await read("../src/lib/payments.server.js");
-  const resultPage = await read("../src/routes/paiement.jsx");
-  assert.match(payments,/export async function reconcileTranzakPayment/);
-  assert.match(payments,/\/payments\/reference\//);
-  assert.match(payments,/\/verify/);
-  assert.match(payments,/export async function reconcilePendingTranzakPayments/);
-  assert.match(resultPage,/refreshOrderPayment/);
-  assert.match(resultPage,/Le retour du portefeuille ne suffit pas à confirmer la transaction/);
-});
+test("P2: login and the professional profile entry are visible and staff access remains role-controlled", async () => {
+  const header = await read("../src/components/site/Header.jsx");
+  const menu = await read("../src/components/site/AccountMenu.jsx");
+  const auth = await read("../src/routes/auth.jsx");
+  const serverAuth = await read("../src/lib/auth.server.js");
+  assert.match(header,/Connexion/);
+  assert.match(menu,/UserRound/);
+  assert.match(menu,/Espace professionnel/);
+  assert.match(auth,/validé et recevoir un rôle attribué par l’administrateur principal/);
+  assert.match(serverAuth,/requireRole/);
+ });
 
 test("P2: refunds are auditable and cannot be closed without a transaction reference and private proof", async () => {
   const migration = await read("../database/migrations/202611200001_p2_payments_notifications_reporting.sql");
