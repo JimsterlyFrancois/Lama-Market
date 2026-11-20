@@ -2,7 +2,7 @@ import { useEffect,useState } from "react";
 import { createFileRoute,Link } from "@tanstack/react-router";
 import { getAccessToken } from "../lib/auth-client";
 import {
- getAdminDashboard,getAdminDeliveries,getAdminReports,adminCreateProduct,adminCreateDeliveryZone,
+ getAdminDashboard,getAdminDeliveries,getAdminReports,adminCreateProduct,adminCreateDeliveryZone,adminListDeliveryZones,adminUpdateDeliveryZone,adminArchiveDeliveryZone,
  adminCreateCourier,adminAssignCourier,adminUpdateOrderStatus,adminAdjustStock,getProductImageUploadUrl,
  adminUpdateProduct,adminArchiveProduct,getStorefrontSettings,getCoverImageUploadUrl,saveStorefrontCover,
  adminListCategories,adminUpsertCategory,adminArchiveCategory,adminListCustomers,
@@ -14,14 +14,14 @@ import {
 export const Route=createFileRoute("/admin")({component:AdminPage});
 const money=new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
 const emptyProduct={name:"",category:"",price:"",oldPrice:"",discountEndsAt:"",stock:"",lowStockThreshold:"5",description:"",imageUrl:"",imageKey:"",sku:"",isActive:true};
-const emptyZone={name:"",city:"Cap-Haïtien",area:"",fee:"",freeFrom:"",minDays:"1",maxDays:"3"};
+const emptyZone={name:"",department:"",city:"Cap-Haïtien",area:"",fee:"",freeFrom:"",minDays:"1",maxDays:"3",isActive:true};
 const emptyCourier={email:"",displayName:"",phone:"",employmentType:"mandated"};
 const emptyStaff={email:"",displayName:"",phone:"",staffRole:"fulfillment"};
 const emptyCategory={name:"",slug:"",description:"",imageUrl:"",sortOrder:"0",isActive:true};
 const emptyCoupon={code:"",discountType:"percent",discountValue:"10",minimumOrder:"0",maxUses:"",startsAt:"",endsAt:"",isActive:true};
 
 function AdminPage(){
- const [data,setData]=useState(null),[deliveries,setDeliveries]=useState([]),[reports,setReports]=useState(null);
+ const [data,setData]=useState(null),[deliveries,setDeliveries]=useState([]),[reports,setReports]=useState(null),[deliveryZones,setDeliveryZones]=useState([]),[editingZoneId,setEditingZoneId]=useState("");
  const [categories,setCategories]=useState([]),[customers,setCustomers]=useState([]),[coupons,setCoupons]=useState([]),[staff,setStaff]=useState([]);
  const [newStaff,setNewStaff]=useState(emptyStaff);
  const [message,setMessage]=useState("Chargement du tableau de bord…"),[busy,setBusy]=useState(false),[coverUrl,setCoverUrl]=useState("");
@@ -33,12 +33,12 @@ function AdminPage(){
  async function load(){
   try{
    const token=await getAccessToken();
-   const [d,l,r,appearance,cats,people,promos,team]=await Promise.all([
+   const [d,l,r,appearance,cats,people,promos,team,zones]=await Promise.all([
     getAdminDashboard({data:{token}}),getAdminDeliveries({data:{token}}),getAdminReports({data:{token}}),
-    getStorefrontSettings(),adminListCategories({data:{token}}),adminListCustomers({data:{token}}),adminListCoupons({data:{token}}),adminListStaff({data:{token}}),
+    getStorefrontSettings(),adminListCategories({data:{token}}),adminListCustomers({data:{token}}),adminListCoupons({data:{token}}),adminListStaff({data:{token}}),adminListDeliveryZones({data:{token}}),
    ]);
    setData(d);setDeliveries(l);setReports(r);setCoverUrl(appearance.heroCoverUrl||"");
-   setCategories(cats);setCustomers(people);setCoupons(promos);setStaff(team);setMessage("");
+   setCategories(cats);setCustomers(people);setCoupons(promos);setStaff(team);setDeliveryZones(zones);setMessage("");
   }catch(e){setMessage(e.message||"Impossible de charger l'administration.");}
  }
  useEffect(()=>{load();},[]);
@@ -101,7 +101,14 @@ function AdminPage(){
   const date=window.prompt("Fin de promotion (ISO, ex. 2026-12-31T23:59:00) ou vide",p.discount_ends_at||"");if(date===null)return;
   await act(adminUpdateProduct,{productId:p.id,name,price:Number(price),category:p.category,description,imageUrl:p.image_url,isActive:p.is_active,oldPrice:old===""?null:Number(old),discountEndsAt:date||null,lowStockThreshold:p.low_stock_threshold},"Produit modifié.");
  }
- async function createZone(e){e.preventDefault();const ok=await act(adminCreateDeliveryZone,{...zone,fee:Number(zone.fee),freeFrom:zone.freeFrom?Number(zone.freeFrom):null});if(ok)setZone(emptyZone);}
+ async function saveZone(e){
+  e.preventDefault();
+  const payload={...zone,fee:Number(zone.fee),freeFrom:zone.freeFrom===""?null:Number(zone.freeFrom),minDays:Number(zone.minDays),maxDays:Number(zone.maxDays)};
+  const ok=editingZoneId
+    ? await act(adminUpdateDeliveryZone,{...payload,zoneId:editingZoneId},"Zone de livraison modifiée.")
+    : await act(adminCreateDeliveryZone,payload,"Zone de livraison créée.");
+  if(ok){setZone(emptyZone);setEditingZoneId("");}
+ }
  async function createCourier(e){e.preventDefault();const ok=await act(adminCreateCourier,courier);if(ok)setCourier(emptyCourier);}
  async function createStaff(e){
   e.preventDefault();
@@ -168,14 +175,20 @@ function AdminPage(){
 
     <div className="admin-grid">
      <section className="commerce-panel"><h2>Zones et frais de livraison</h2>
-      <form className="account-form" onSubmit={createZone}>
-       <label>Nom de la zone<input required value={zone.name} onChange={e=>setZone({...zone,name:e.target.value})}/></label>
+      <form className="account-form" onSubmit={saveZone}>
+       <div className="form-two"><label>Nom de la zone<input required value={zone.name} onChange={e=>setZone({...zone,name:e.target.value})}/></label><label>Département<input value={zone.department} onChange={e=>setZone({...zone,department:e.target.value})}/></label></div>
        <div className="form-two"><label>Ville<input required value={zone.city} onChange={e=>setZone({...zone,city:e.target.value})}/></label><label>Quartier / zone<input value={zone.area} onChange={e=>setZone({...zone,area:e.target.value})}/></label></div>
-       <label>Frais (HTG)<input type="number" min="0" step="0.01" required value={zone.fee} onChange={e=>setZone({...zone,fee:e.target.value})}/></label>
-       <label>Livraison gratuite à partir de (HTG)<input type="number" min="0" value={zone.freeFrom} onChange={e=>setZone({...zone,freeFrom:e.target.value})}/></label>
+       <div className="form-two"><label>Frais (HTG)<input type="number" min="0" step="0.01" required value={zone.fee} onChange={e=>setZone({...zone,fee:e.target.value})}/></label><label>Livraison gratuite à partir de (HTG)<input type="number" min="0" value={zone.freeFrom} onChange={e=>setZone({...zone,freeFrom:e.target.value})}/></label></div>
        <div className="form-two"><label>Délai min. jours<input type="number" min="0" value={zone.minDays} onChange={e=>setZone({...zone,minDays:e.target.value})}/></label><label>Délai max. jours<input type="number" min="1" value={zone.maxDays} onChange={e=>setZone({...zone,maxDays:e.target.value})}/></label></div>
-       <button className="account-submit" disabled={busy}>Enregistrer la zone</button>
+       <label className="check-label"><input type="checkbox" checked={zone.isActive} onChange={e=>setZone({...zone,isActive:e.target.checked})}/> Zone active</label>
+       <div className="address-actions"><button className="account-submit" disabled={busy}>{editingZoneId?"Enregistrer la zone":"Créer la zone"}</button>{editingZoneId&&<button type="button" className="text-button" onClick={()=>{setEditingZoneId("");setZone(emptyZone);}}>Annuler</button>}</div>
       </form>
+      {deliveryZones.map(z=><div className="table-line" key={z.id}>
+       <span><strong>{z.name}</strong><small>{z.department||""} · {z.city}{z.area?" · "+z.area:""} · {money.format(Number(z.fee||0))}{z.free_from!=null?" · Gratuit dès "+money.format(Number(z.free_from)):""} · {z.is_active&&z.rate_is_active?"Active":"Désactivée"}</small></span>
+       <button className="text-button" onClick={()=>{setEditingZoneId(z.id);setZone({name:z.name,department:z.department||"",city:z.city,area:z.area||"",fee:String(z.fee??0),freeFrom:z.free_from==null?"":String(z.free_from),minDays:String(z.estimated_min_days??1),maxDays:String(z.estimated_max_days??3),isActive:z.is_active&&z.rate_is_active!==false});}}>Modifier</button>
+       <button className="text-button" disabled={!z.is_active||busy} onClick={()=>act(adminArchiveDeliveryZone,{zoneId:z.id},"Zone de livraison désactivée.")}>Désactiver</button>
+      </div>)}
+      {!deliveryZones.length&&<p className="muted-note">Aucune zone configurée.</p>}
      </section>
      <section className="commerce-panel"><h2>Ajouter un livreur</h2><p className="muted-note">Le livreur doit d'abord créer son compte Lama Market. Son e-mail sera ensuite autorisé à accéder à son espace.</p>
       <form className="account-form" onSubmit={createCourier}>
