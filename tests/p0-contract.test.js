@@ -176,7 +176,7 @@ test("P2: the storefront has no third-party payment webhook or gateway implement
   const commerce = await read("../src/lib/commerce.js");
   assert.doesNotMatch(commerce,/startTranzakPayment|reconcileTranzakPayment|tranzak/i);
   await assert.rejects(access(new URL("../src/routes/api.webhooks.tranzak.jsx", import.meta.url)));
-  assert.match(commerce,/paymentStatus/);
+  assert.match(commerce,/payment_status/);
  });
 
 test("P2: login and the professional profile entry are visible and staff access remains role-controlled", async () => {
@@ -238,13 +238,11 @@ test("P2: sales, payment and inventory reports are exportable as CSV", async () 
 
 test("P2: notifications are emitted for order, delivery, payment, refund and stock events", async () => {
   const commerce = await read("../src/lib/commerce.js");
-  const payments = await read("../src/lib/payments.server.js");
   const notifications = await read("../src/lib/notifications.server.js");
   assert.match(commerce,/createNotification\(db/);
   assert.match(commerce,/createAdminNotification\(db/);
   assert.match(commerce,/Alerte de stock faible/);
   assert.match(commerce,/payment_status/);
-  assert.match(notifications,/createAdminNotification/);
   assert.match(notifications,/createAdminNotification/);
 });
 
