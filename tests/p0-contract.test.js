@@ -194,7 +194,7 @@ test("P2: payment webhooks validate signatures, reference, currency, amount and 
   assert.match(payments,/verifyHmacSha256\(rawBody, signature, secret\)/);
   assert.match(payments,/sameMoney\(data\.amount, row\.total\)/);
   assert.match(payments,/data\.currency !== "HTG"/);
-  assert.match(payments,/data\.reference !== reference/);
+  assert.match(payments,/data\.reference !== order\.order_number/);
   assert.match(payments,/on conflict\(provider_event_id\) do nothing/);
   assert.match(payments,/payment\.success/);
   assert.match(payments,/payment\.failed/);
