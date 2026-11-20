@@ -57,7 +57,7 @@ export const getMyCart = createServerFn({ method: "GET" }).validator((data) => d
   const user = await ensureCustomer(data.token);
   const db = await getDb();
   const result = await db.query(
-    "select ci.id,ci.product_id,ci.quantity,p.name,p.price,p.old_price,p.discount_ends_at,p.stock,p.image_url,p.is_active from public.carts c join public.cart_items ci on ci.cart_id=c.id join public.products p on p.id=ci.product_id where c.user_id=$1 and c.status='active' order by ci.created_at",
+    "select ci.id,ci.product_id,ci.quantity,p.name,case when p.old_price is not null and p.discount_ends_at is not null and p.discount_ends_at<=now() then p.old_price else p.price end price,p.old_price,p.discount_ends_at,p.stock,p.image_url,p.is_active from public.carts c join public.cart_items ci on ci.cart_id=c.id join public.products p on p.id=ci.product_id where c.user_id=$1 and c.status='active' order by ci.created_at",
     [user.id],
   );
   return result.rows;
@@ -635,7 +635,7 @@ export const deleteMyAddress=createServerFn({method:"POST"}).validator((data)=>d
 });
 export const getCheckoutQuote=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
   const user=await ensureCustomer(data.token),db=await getDb();
-  const cart=await db.query("select ci.quantity,p.price,p.stock,p.name from public.carts c join public.cart_items ci on ci.cart_id=c.id join public.products p on p.id=ci.product_id where c.user_id=$1 and c.status='active' and p.is_active=true and p.deleted_at is null",[user.id]);
+  const cart=await db.query("select ci.quantity,case when p.old_price is not null and p.discount_ends_at is not null and p.discount_ends_at<=now() then p.old_price else p.price end price,p.stock,p.name from public.carts c join public.cart_items ci on ci.cart_id=c.id join public.products p on p.id=ci.product_id where c.user_id=$1 and c.status='active' and p.is_active=true and p.deleted_at is null",[user.id]);
   if(!cart.rowCount) fail("Votre panier est vide.");
   let subtotal=0;for(const item of cart.rows){if(Number(item.stock)<Number(item.quantity))fail("Stock insuffisant pour : "+item.name);subtotal+=Number(item.price)*Number(item.quantity);}
   let deliveryFee=null;
@@ -792,9 +792,11 @@ export const getDeliveryProofDownloadUrl=createServerFn({method:"POST"}).validat
   const user=await requireUser(data.token),db=await getDb();
   const roles=await db.query("select role from public.user_roles where user_id=$1 and is_active=true",[user.id]);
   const admin=roles.rows.some(row=>row.role==="admin");
-  const assigned=await db.query("select 1 from public.deliveries where id=$1 and courier_id=$2",[data.deliveryId,user.id]);
-  if(!admin&&!assigned.rowCount)fail("Accès à cette preuve de livraison refusé.",403);
-  const key=clean(data.storageKey,1024);if(!key.startsWith("delivery-proofs/"))fail("Preuve invalide.");
+  const delivery=await db.query("select courier_id,proof_url from public.deliveries where id=$1",[data.deliveryId]);
+  if(!delivery.rowCount)fail("Livraison introuvable.");
+  const key=clean(data.storageKey,1024);
+  if(!key.startsWith("delivery-proofs/")||delivery.rows[0].proof_url!==key)fail("Preuve de livraison invalide.",404);
+  if(!admin&&delivery.rows[0].courier_id!==user.id)fail("Accès à cette preuve de livraison refusé.",403);
   const storage=await import("./storage.server");
   return {url:await storage.createDeliveryProofDownload({key})};
 });
