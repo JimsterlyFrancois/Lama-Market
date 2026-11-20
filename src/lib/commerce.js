@@ -805,3 +805,44 @@ export const getDeliveryProofDownloadUrl=createServerFn({method:"POST"}).validat
   const storage=await import("./storage.server");
   return {url:await storage.createDeliveryProofDownload({key})};
 });
+
+export const adminListDeliveryZones=createServerFn({method:"GET"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  const result=await (await getDb()).query(`select z.id,z.name,z.department,z.city,z.area,z.is_active,z.estimated_min_days,z.estimated_max_days,
+    r.id rate_id,r.fee,r.free_from,r.is_active rate_is_active
+    from public.delivery_zones z left join lateral
+      (select id,fee,free_from,is_active from public.delivery_rates where zone_id=z.id order by updated_at desc,created_at desc limit 1) r on true
+    order by z.city,z.area nulls first,z.name`);
+  return result.rows;
+});
+
+export const adminUpdateDeliveryZone=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  const name=clean(data.name,100),city=clean(data.city,100),fee=Number(data.fee);
+  if(!name||!city||!Number.isFinite(fee)||fee<0)fail("Nom, ville et tarif valides requis.");
+  const minDays=Math.max(0,Math.floor(Number(data.minDays)||0));
+  const maxDays=Math.max(1,Math.floor(Number(data.maxDays)||1));
+  if(maxDays<minDays)fail("Le délai maximum doit être supérieur au délai minimum.");
+  const client=await (await getDb()).connect();
+  try{
+    await client.query("begin");
+    const zone=await client.query("update public.delivery_zones set name=$2,department=$3,city=$4,area=$5,estimated_min_days=$6,estimated_max_days=$7,is_active=$8,updated_at=now() where id=$1 returning id",[data.zoneId,name,clean(data.department,100)||null,city,clean(data.area,100)||null,minDays,maxDays,data.isActive!==false]);
+    if(!zone.rowCount)fail("Zone de livraison introuvable.");
+    const rate=await client.query("select id from public.delivery_rates where zone_id=$1 order by updated_at desc,created_at desc limit 1 for update",[data.zoneId]);
+    if(rate.rowCount)await client.query("update public.delivery_rates set fee=$2,free_from=$3,is_active=$4,updated_at=now() where id=$1",[rate.rows[0].id,fee,data.freeFrom===""||data.freeFrom==null?null:Number(data.freeFrom),data.isActive!==false]);
+    else await client.query("insert into public.delivery_rates(zone_id,fee,free_from,is_active) values($1,$2,$3,$4)",[data.zoneId,fee,data.freeFrom===""||data.freeFrom==null?null:Number(data.freeFrom),data.isActive!==false]);
+    await client.query("commit");return {ok:true};
+  }catch(error){await client.query("rollback");throw error;}finally{client.release();}
+});
+
+export const adminArchiveDeliveryZone=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  const client=await (await getDb()).connect();
+  try{
+    await client.query("begin");
+    const r=await client.query("update public.delivery_zones set is_active=false,updated_at=now() where id=$1 returning id",[data.zoneId]);
+    if(!r.rowCount)fail("Zone de livraison introuvable.");
+    await client.query("update public.delivery_rates set is_active=false,updated_at=now() where zone_id=$1",[data.zoneId]);
+    await client.query("commit");return {ok:true};
+  }catch(error){await client.query("rollback");throw error;}finally{client.release();}
+});
