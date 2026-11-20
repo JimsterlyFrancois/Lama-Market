@@ -51,7 +51,7 @@ export const getMyCart = createServerFn({ method: "GET" }).validator((data) => d
   const user = await ensureCustomer(data.token);
   const db = await getDb();
   const result = await db.query(
-    "select ci.id,ci.product_id,ci.quantity,p.name,p.price,p.stock,p.image_url,p.is_active from public.carts c join public.cart_items ci on ci.cart_id=c.id join public.products p on p.id=ci.product_id where c.user_id=$1 and c.status='active' order by ci.created_at",
+    "select ci.id,ci.product_id,ci.quantity,p.name,p.price,p.old_price,p.discount_ends_at,p.stock,p.image_url,p.is_active from public.carts c join public.cart_items ci on ci.cart_id=c.id join public.products p on p.id=ci.product_id where c.user_id=$1 and c.status='active' order by ci.created_at",
     [user.id],
   );
   return result.rows;
@@ -98,15 +98,21 @@ export const removeCartItem = createServerFn({ method: "POST" }).validator((data
 export const checkout = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const user = await ensureCustomer(data.token);
   if (data.paymentMethod !== "cash_on_delivery") fail("Seul le paiement à la livraison est actuellement activé.");
-  const address = data.address || {};
+  const db = await getDb();
+  let address = data.address || {};
+  if (data.addressId) {
+    const saved = await db.query("select recipient_name,phone,address_line,department,city,area,landmark,delivery_instructions from public.addresses where id=$1 and user_id=$2", [data.addressId,user.id]);
+    if (!saved.rowCount) fail("Adresse de livraison introuvable.");
+    const a=saved.rows[0];
+    address={recipientName:a.recipient_name,phone:a.phone,addressLine:a.address_line,department:a.department,city:a.city,area:a.area,landmark:a.landmark,instructions:a.delivery_instructions};
+  }
   const required = ["recipientName","phone","addressLine","city"];
   if (required.some((key) => !clean(address[key], 180))) fail("Complétez le nom, le téléphone, l'adresse et la ville.");
-  const db = await getDb();
   const client = await db.connect();
   const idem = clean(data.idempotencyKey, 100) || crypto.randomUUID();
   try {
     await client.query("begin");
-    const prior = await client.query("select id,order_number from public.orders where idempotency_key=$1", [idem]);
+    const prior = await client.query("select id,order_number from public.orders where idempotency_key=$1 and customer_id=$2", [idem,user.id]);
     if (prior.rowCount) { await client.query("commit"); return { id: prior.rows[0].id, orderNumber: prior.rows[0].order_number }; }
     const cart = await client.query("select id from public.carts where user_id=$1 and status='active' for update", [user.id]);
     if (!cart.rowCount) fail("Votre panier est vide.");
@@ -116,6 +122,7 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
     );
     if (!items.rowCount) fail("Votre panier est vide ou contient des produits indisponibles.");
     let subtotal = 0;
+    if (promotion.coupon) await client.query("insert into public.coupon_redemptions(coupon_id,order_id,customer_id,discount_amount) values($1,$2,$3,$4)", [promotion.coupon.id,order.rows[0].id,user.id,promotion.discount]);
     for (const item of items.rows) {
       if (item.stock < item.quantity) fail("Stock insuffisant pour : " + item.name);
       subtotal += Number(item.price) * item.quantity;
@@ -126,7 +133,8 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
     );
     if (!zone.rowCount) fail("La livraison n'est pas encore configurée pour cette zone. Contactez Lama Market.");
     const deliveryFee = zone.rows[0].free_from !== null && subtotal >= Number(zone.rows[0].free_from) ? 0 : Number(zone.rows[0].fee);
-    const total = subtotal + deliveryFee;
+    const promotion = await couponDiscount(client,data.couponCode,user.id,subtotal,true);
+    const total = subtotal + deliveryFee - promotion.discount;
     const orderNumber = "LM-" + new Date().toISOString().slice(0,10).replaceAll("-","") + "-" + crypto.randomUUID().slice(0,8).toUpperCase();
     const snapshot = {
       recipientName: clean(address.recipientName,180), phone: clean(address.phone,40),
@@ -135,8 +143,8 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
       instructions: clean(address.instructions,500),
     };
     const order = await client.query(
-      "insert into public.orders(order_number,customer_id,status,payment_status,delivery_status,subtotal,delivery_fee,total,address_snapshot,customer_note,idempotency_key,confirmed_at) values($1,$2,'confirmed','cash_due','unassigned',$3,$4,$5,$6,$7,$8,now()) returning id",
-      [orderNumber,user.id,subtotal,deliveryFee,total,snapshot,clean(data.note,500)||null,idem],
+      "insert into public.orders(order_number,customer_id,status,payment_status,delivery_status,subtotal,discount_total,delivery_fee,total,address_snapshot,customer_note,idempotency_key,confirmed_at) values($1,$2,'confirmed','cash_due','unassigned',$3,$4,$5,$6,$7,$8,$9,now()) returning id",
+      [orderNumber,user.id,subtotal,promotion.discount,deliveryFee,total,snapshot,clean(data.note,500)||null,idem],
     );
     for (const item of items.rows) {
       const changed = await client.query("update public.products set stock=stock-$2,updated_at=now() where id=$1 and stock >= $2 returning id", [item.product_id,item.quantity]);
