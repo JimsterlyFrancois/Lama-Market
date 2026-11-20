@@ -14,9 +14,12 @@ const clean = (value, max = 500) => String(value ?? "").trim().slice(0, max);
 export const getCatalog = createServerFn({ method: "GET" }).handler(async () => {
   const db = await getDb();
   const [products, categories] = await Promise.all([
-    db.query(`select p.id,p.name,p.description,p.category,p.price,p.old_price,p.discount_ends_at,p.stock,p.badge,p.rating,p.reviews,p.image_url,p.is_active,p.sort_order,p.sku,p.slug,p.is_featured,
+    db.query(`select p.id,p.name,p.description,p.category,c.name category_name,
+      case when p.old_price is not null and p.discount_ends_at is not null and p.discount_ends_at<=now() then p.old_price else p.price end price,
+      case when p.discount_ends_at is not null and p.discount_ends_at<=now() then null else p.old_price end old_price,
+      p.discount_ends_at,p.stock,p.badge,p.rating,p.reviews,p.image_url,p.is_active,p.sort_order,p.sku,p.slug,p.is_featured,
       coalesce((select json_agg(json_build_object('id',pi.id,'storage_key',pi.storage_key,'altText',pi.alt_text,'isPrimary',pi.is_primary,'sortOrder',pi.sort_order) order by pi.is_primary desc,pi.sort_order,pi.created_at) from public.product_images pi where pi.product_id=p.id),'[]'::json) images
-      from public.products p where p.is_active=true and p.deleted_at is null order by p.is_featured desc,p.sort_order asc,p.name asc`),
+      from public.products p left join public.categories c on c.slug=p.category where p.is_active=true and p.deleted_at is null order by p.is_featured desc,p.sort_order asc,p.name asc`),
     db.query("select slug,name from public.categories where is_active=true order by sort_order"),
   ]);
   const endpoint = process.env.AWS_ENDPOINT_URL_S3?.replace(/\/$/, "");
@@ -27,6 +30,9 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
       ...image,
       url: image.url || (imageBase && image.storage_key ? imageBase + image.storage_key : null),
     })),
+    image_url: product.image_url || ((product.images || []).find((image) => image.isPrimary)?.storage_key && imageBase
+      ? imageBase + (product.images || []).find((image) => image.isPrimary).storage_key
+      : null),
   }));
   return { products: rows, categories: categories.rows };
 });
