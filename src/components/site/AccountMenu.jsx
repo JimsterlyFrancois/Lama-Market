@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { LayoutDashboard, LogOut } from "lucide-react";
+import { LayoutDashboard, LogOut, UserRound } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { getMyAccess } from "@/lib/staff-fns";
 
 export default function AccountMenu() {
-  const { user, isAuthenticated, isLoadingAuth, logout, navigateToLogin } = useAuth();
+  const { user, isAuthenticated, isLoadingAuth, logout } = useAuth();
   const [level, setLevel] = useState(null);
 
   useEffect(() => {
@@ -27,10 +27,10 @@ export default function AccountMenu() {
   const trigger = (
     <button
       type="button"
-      aria-label="Mon compte"
+      aria-label="Espace professionnel" title="Espace professionnel"
       className="grid h-10 w-10 place-items-center rounded-full text-foreground/70 transition-colors hover:bg-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
-      <img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" className="h-7 w-7 object-contain" />
+      <UserRound className="h-5 w-5" strokeWidth={1.9} aria-hidden="true" />
     </button>
   );
 
