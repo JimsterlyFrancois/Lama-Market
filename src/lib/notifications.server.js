@@ -93,3 +93,17 @@ export async function createNotification(db, { userId, type, title, message, dat
   await deliverNotificationEmail(db, notificationId);
   return notificationId;
 }
+
+
+export async function createAdminNotification(db, { type, title, message, data = {} }) {
+  const admins = await db.query(
+    "select user_id from public.user_roles where role='admin' and is_active=true",
+  );
+  const results = [];
+  for (const admin of admins.rows) {
+    results.push(await createNotification(db, {
+      userId: admin.user_id, type, title, message, data,
+    }));
+  }
+  return results;
+}
