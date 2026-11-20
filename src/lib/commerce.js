@@ -658,3 +658,100 @@ export const adminUpsertCoupon=createServerFn({method:"POST"}).validator((data)=
 export const adminArchiveCoupon=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
   await requireRole(data.token,["admin"]);const r=await (await getDb()).query("update public.coupons set is_active=false,updated_at=now() where id=$1 returning id",[data.couponId]);if(!r.rowCount)fail("Code introuvable.");return {ok:true};
 });
+
+export const adminAddProductImage=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  const key=clean(data.storageKey,1024);if(!key.startsWith("products/"))fail("Fichier image produit invalide.");
+  const db=await getDb(),client=await db.connect();
+  try{
+    await client.query("begin");
+    const p=await client.query("select id from public.products where id=$1 and deleted_at is null for update",[data.productId]);
+    if(!p.rowCount)fail("Produit introuvable.");
+    const count=await client.query("select count(*)::int count from public.product_images where product_id=$1",[data.productId]);
+    if(count.rows[0].count>=8)fail("Maximum de 8 images par produit.");
+    const primary=data.isPrimary===true||count.rows[0].count===0;
+    if(primary)await client.query("update public.product_images set is_primary=false where product_id=$1",[data.productId]);
+    const r=await client.query("insert into public.product_images(product_id,storage_key,alt_text,is_primary,sort_order) values($1,$2,$3,$4,$5) returning id",[data.productId,key,clean(data.altText,180)||null,primary,Math.max(0,Math.trunc(Number(data.sortOrder)||0))]);
+    const endpoint=process.env.AWS_ENDPOINT_URL_S3?.replace(/\/$/,"");
+    if(primary&&endpoint)await client.query("update public.products set image_url=$2,updated_at=now() where id=$1",[data.productId,`${endpoint}/product-images/${key}`]);
+    await client.query("commit");return {id:r.rows[0].id,primary};
+  }catch(e){await client.query("rollback");throw e;}finally{client.release();}
+});
+export const adminSetPrimaryProductImage=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);const db=await getDb(),client=await db.connect();
+  try{
+    await client.query("begin");
+    const r=await client.query("select product_id,storage_key from public.product_images where id=$1 for update",[data.imageId]);if(!r.rowCount)fail("Image introuvable.");
+    await client.query("update public.product_images set is_primary=false where product_id=$1",[r.rows[0].product_id]);
+    await client.query("update public.product_images set is_primary=true where id=$1",[data.imageId]);
+    const endpoint=process.env.AWS_ENDPOINT_URL_S3?.replace(/\/$/,"");
+    if(endpoint)await client.query("update public.products set image_url=$2,updated_at=now() where id=$1",[r.rows[0].product_id,`${endpoint}/product-images/${r.rows[0].storage_key}`]);
+    await client.query("commit");return {ok:true};
+  }catch(e){await client.query("rollback");throw e;}finally{client.release();}
+});
+export const adminDeleteProductImage=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);const db=await getDb(),client=await db.connect();
+  try{
+    await client.query("begin");
+    const r=await client.query("select product_id,is_primary from public.product_images where id=$1 for update",[data.imageId]);if(!r.rowCount)fail("Image introuvable.");
+    await client.query("delete from public.product_images where id=$1",[data.imageId]);
+    if(r.rows[0].is_primary){
+      const next=await client.query("select id,storage_key from public.product_images where product_id=$1 order by sort_order,created_at limit 1",[r.rows[0].product_id]);
+      const endpoint=process.env.AWS_ENDPOINT_URL_S3?.replace(/\/$/,"");
+      if(next.rowCount){
+        await client.query("update public.product_images set is_primary=true where id=$1",[next.rows[0].id]);
+        if(endpoint)await client.query("update public.products set image_url=$2,updated_at=now() where id=$1",[r.rows[0].product_id,`${endpoint}/product-images/${next.rows[0].storage_key}`]);
+      }else await client.query("update public.products set image_url=null,updated_at=now() where id=$1",[r.rows[0].product_id]);
+    }
+    await client.query("commit");return {ok:true};
+  }catch(e){await client.query("rollback");throw e;}finally{client.release();}
+});
+
+export const adminGetProductStockHistory=createServerFn({method:"GET"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  const r=await (await getDb()).query("select sm.id,sm.quantity_delta,sm.movement_type,sm.reference_type,sm.reference_id,sm.note,sm.created_at,u.name actor_name from public.stock_movements sm left join neon_auth.\"user\" u on u.id=sm.created_by where sm.product_id=$1 order by sm.created_at desc limit 100",[data.productId]);
+  return r.rows;
+});
+
+async function releaseExpiredStockReservations(db, actorId=null) {
+  const client=await db.connect();
+  try{
+    await client.query("begin");
+    const rows=await client.query(`select sr.id reservation_id,sr.product_id,sr.quantity,oi.order_id,o.customer_id,o.order_number,o.status previous_status
+      from public.stock_reservations sr join public.order_items oi on oi.id=sr.order_item_id join public.orders o on o.id=oi.order_id
+      where sr.status='reserved' and sr.expires_at<=now() and o.status in ('pending','confirmed') and o.delivery_status='unassigned'
+      for update of sr,o skip locked`);
+    for(const row of rows.rows){
+      await client.query("update public.products set stock=stock+$2,updated_at=now() where id=$1",[row.product_id,row.quantity]);
+      await client.query("update public.stock_reservations set status='expired',released_at=now() where id=$1",[row.reservation_id]);
+      await client.query("insert into public.stock_movements(product_id,quantity_delta,movement_type,reference_type,reference_id,note,created_by) values($1,$2,'reservation_release','order',$3,'Libération après expiration de la réservation',$4)",[row.product_id,row.quantity,row.order_id,actorId]);
+      await client.query("update public.orders set status='cancelled',cancelled_at=now(),updated_at=now() where id=$1",[row.order_id]);
+      await client.query("update public.deliveries set status='failed',failure_reason='Réservation de stock expirée',updated_at=now() where order_id=$1 and status='unassigned'",[row.order_id]);
+      await client.query("insert into public.order_status_history(order_id,previous_status,new_status,note,actor_id) values($1,$2,'cancelled','Expiration de la réservation de stock',$3)",[row.order_id,row.previous_status,actorId]);
+      await client.query("insert into public.notifications(user_id,type,title,message,data) values($1,'order_cancelled','Commande annulée','Votre commande a été annulée car la réservation de stock a expiré.',$2)",[row.customer_id,{orderNumber:row.order_number}]);
+    }
+    await client.query("commit");return rows.rowCount;
+  }catch(e){await client.query("rollback");throw e;}finally{client.release();}
+}
+export const adminReleaseExpiredReservations=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  const admin=await requireRole(data.token,["admin"]);
+  return {released:await releaseExpiredStockReservations(await getDb(),admin.id)};
+});
+
+export const getDeliveryProofUploadUrl=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  const courier=await requireRole(data.token,["courier"]);
+  const assigned=await (await getDb()).query("select id from public.deliveries where id=$1 and courier_id=$2",[data.deliveryId,courier.id]);
+  if(!assigned.rowCount)fail("Cette livraison ne vous est pas attribuée.",403);
+  const storage=await import("./storage.server");
+  return storage.createDeliveryProofUpload({contentType:data.contentType,size:Number(data.size)});
+});
+export const getDeliveryProofDownloadUrl=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  const user=await requireUser(data.token),db=await getDb();
+  const roles=await db.query("select role from public.user_roles where user_id=$1 and is_active=true",[user.id]);
+  const admin=roles.rows.some(row=>row.role==="admin");
+  const assigned=await db.query("select 1 from public.deliveries where id=$1 and courier_id=$2",[data.deliveryId,user.id]);
+  if(!admin&&!assigned.rowCount)fail("Accès à cette preuve de livraison refusé.",403);
+  const key=clean(data.storageKey,1024);if(!key.startsWith("delivery-proofs/"))fail("Preuve invalide.");
+  const storage=await import("./storage.server");
+  return {url:await storage.createDeliveryProofDownload({key})};
+});
