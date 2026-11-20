@@ -156,3 +156,127 @@ test("P1: administrators can maintain and deactivate delivery zones and rates", 
   assert.match(admin, /Modifier/);
   assert.match(admin, /Désactiver/);
 });
+
+
+test("P2: payment signature verification uses raw-body HMAC and constant-time equality", async () => {
+  const { createHmac } = await import("node:crypto");
+  const { verifyHmacSha256, sameMoney, moneyToCents, tranzakEventKey } = await import("../src/lib/payment-security.js");
+  const raw = Buffer.from('{"event":"payment.success","data":{"amount":"100.00"}}');
+  const secret = "test-webhook-secret";
+  const signature = createHmac("sha256",secret).update(raw).digest("hex");
+  assert.equal(verifyHmacSha256(raw,signature,secret),true);
+  assert.equal(verifyHmacSha256(Buffer.from(raw.toString()+" "),signature,secret),false);
+  assert.equal(verifyHmacSha256(raw,signature,"wrong-secret"),false);
+  assert.equal(sameMoney("100.00","100"),true);
+  assert.equal(sameMoney("100.01","100"),false);
+  assert.equal(moneyToCents("1.25"),125);
+  assert.equal(moneyToCents("1.234"),null);
+  assert.equal(tranzakEventKey("payment.success","tx-1"),"tranzak:payment.success:tx-1");
+});
+
+test("P2: mobile wallet payments remain disabled without merchant and webhook credentials", async () => {
+  const payments = await read("../src/lib/payments.server.js");
+  const commerce = await read("../src/lib/commerce.js");
+  const cart = await read("../src/routes/panier.jsx");
+  assert.match(payments,/TRANZAK_API_KEY\s*&&\s*process\.env\.TRANZAK_WEBHOOK_SECRET/);
+  assert.match(payments,/cash_on_delivery:\s*true/);
+  assert.match(commerce,/paymentAvailability\[paymentMethod\]/);
+  assert.match(commerce,/payment_method/);
+  assert.match(cart,/paymentOptions\.moncash/);
+  assert.match(cart,/paymentOptions\.natcash/);
+});
+
+test("P2: payment webhooks validate signatures, reference, currency, amount and duplicate events", async () => {
+  const route = await read("../src/routes/api.webhooks.tranzak.jsx");
+  const payments = await read("../src/lib/payments.server.js");
+  assert.match(route,/request\.arrayBuffer\(\)/);
+  assert.match(route,/X-Tranzak-Signature/);
+  assert.match(payments,/verifyHmacSha256\(rawBody, signature, secret\)/);
+  assert.match(payments,/sameMoney\(data\.amount, row\.total\)/);
+  assert.match(payments,/data\.currency !== "HTG"/);
+  assert.match(payments,/data\.reference !== reference/);
+  assert.match(payments,/on conflict\(provider_event_id\) do nothing/);
+  assert.match(payments,/payment\.success/);
+  assert.match(payments,/payment\.failed/);
+});
+
+test("P2: server payment reconciliation never trusts the browser return URL", async () => {
+  const payments = await read("../src/lib/payments.server.js");
+  const resultPage = await read("../src/routes/paiement.jsx");
+  assert.match(payments,/export async function reconcileTranzakPayment/);
+  assert.match(payments,/\/payments\/reference\//);
+  assert.match(payments,/\/verify/);
+  assert.match(payments,/export async function reconcilePendingTranzakPayments/);
+  assert.match(resultPage,/refreshOrderPayment/);
+  assert.match(resultPage,/Le retour du portefeuille ne suffit pas à confirmer la transaction/);
+});
+
+test("P2: refunds are auditable and cannot be closed without a transaction reference and private proof", async () => {
+  const migration = await read("../database/migrations/202611200001_p2_payments_notifications_reporting.sql");
+  const commerce = await read("../src/lib/commerce.js");
+  const storage = await read("../src/lib/storage.server.js");
+  const admin = await read("../src/routes/admin.jsx");
+  const orders = await read("../src/routes/commandes.jsx");
+  assert.match(migration,/create table if not exists public\.payment_refunds/);
+  assert.match(commerce,/export const adminCreateRefund/);
+  assert.match(commerce,/proofKey\?\.startsWith\("refund-proofs\//);
+  assert.match(commerce,/externalReference/);
+  assert.match(commerce,/public\.audit_logs/);
+  assert.match(storage,/refund-proofs\//);
+  assert.match(admin,/Enregistrer le remboursement/);
+  assert.match(orders,/o\.refunds/);
+});
+
+test("P2: notification channels are tracked and email opt-out is respected", async () => {
+  const migration = await read("../database/migrations/202611200001_p2_payments_notifications_reporting.sql");
+  const notifications = await read("../src/lib/notifications.server.js");
+  const commerce = await read("../src/lib/commerce.js");
+  const account = await read("../src/routes/compte.jsx");
+  assert.match(migration,/create table if not exists public\.notification_preferences/);
+  assert.match(migration,/create table if not exists public\.notification_deliveries/);
+  assert.match(notifications,/RESEND_API_KEY/);
+  assert.match(notifications,/email_enabled/);
+  assert.match(notifications,/status='skipped'/);
+  assert.match(commerce,/export const updateMyNotificationPreferences/);
+  assert.match(account,/Notifications par e-mail/);
+  assert.match(account,/Notifications par SMS/);
+});
+
+test("P2: sales, payment and inventory reports are exportable as CSV", async () => {
+  const commerce = await read("../src/lib/commerce.js");
+  const admin = await read("../src/routes/admin.jsx");
+  assert.match(commerce,/export const getAdminReports/);
+  assert.match(commerce,/net_collected/);
+  assert.match(commerce,/paymentMethods/);
+  assert.match(commerce,/refunds r where r\.order_id=o\.id and r\.status='completed'/);
+  assert.match(admin,/exportCsv\(/);
+  assert.match(admin,/Exporter ventes CSV/);
+  assert.match(admin,/Exporter produits CSV/);
+  assert.match(admin,/Exporter stocks CSV/);
+  assert.match(admin,/Exporter paiements CSV/);
+});
+
+test("P2: notifications are emitted for order, delivery, payment, refund and stock events", async () => {
+  const commerce = await read("../src/lib/commerce.js");
+  const payments = await read("../src/lib/payments.server.js");
+  const notifications = await read("../src/lib/notifications.server.js");
+  assert.match(commerce,/createNotification\(db/);
+  assert.match(commerce,/createAdminNotification\(db/);
+  assert.match(commerce,/Alerte de stock faible/);
+  assert.match(payments,/payment_success/);
+  assert.match(payments,/payment_failed/);
+  assert.match(payments,/createAdminNotification/);
+  assert.match(notifications,/createAdminNotification/);
+});
+
+test("P2: responsive accessibility settings and reduced-motion support remain in place", async () => {
+  const css = await read("../src/styles/app.css");
+  const home = await read("../src/routes/index.jsx");
+  const admin = await read("../src/routes/admin.jsx");
+  assert.match(css,/@media\(max-width:640px\)/);
+  assert.match(css,/prefers-reduced-motion:reduce/);
+  assert.match(css,/focus-visible/);
+  assert.match(home,/aria-label="Rechercher un produit"/);
+  assert.match(home,/loading="lazy"/);
+  assert.match(admin,/report-table-wrap/);
+});
