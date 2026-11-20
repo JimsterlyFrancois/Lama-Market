@@ -180,3 +180,67 @@ html[data-theme="dark"] .admin-cover-heading p{color:#a0b2a4}
 html[data-theme="dark"] .cover-current-label{background:#263b2d;color:#c2dc9b}
 html[data-theme="dark"] .admin-cover-preview{border-color:#344b39}
 html[data-theme="dark"] .admin-cover-panel input[type=file]{background:#101914;border-color:#45604c;color:#e5eee7}
+
+
+/* P2: payment, refund, reporting and notification surfaces */
+.payment-methods{display:grid;gap:10px;border:1px solid var(--line);border-radius:14px;padding:14px;margin:2px 0 0;min-width:0}
+.payment-methods legend{padding:0 6px;font-size:12px;font-weight:800;color:var(--green-dark)}
+.payment-method-option{display:flex!important;align-items:center;gap:12px;min-height:58px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;cursor:pointer}
+.payment-method-option input{width:18px!important;min-height:18px!important;accent-color:var(--green);flex:0 0 auto}
+.payment-method-option span,.payment-method-option strong,.payment-method-option small{display:block}
+.payment-method-option strong{font-size:12px;color:#264b36}
+.payment-method-option small{font-size:10px;line-height:1.5;color:var(--muted);font-weight:500}
+.payment-method-option.is-disabled{opacity:.55;cursor:not-allowed;background:#f7f8f5}
+.payment-provider-note{font-size:10px;line-height:1.55;color:#8a6844}
+.payment-result-card{text-align:center}
+.payment-state-icon{width:58px;height:58px;display:grid;place-items:center;margin:8px auto 15px;border-radius:50%;font:800 27px Manrope,sans-serif}
+.payment-state-icon.is-paid{background:#e7f4e4;color:#28713e}
+.payment-state-icon.is-failed{background:#fff0ed;color:#b64c3f}
+.payment-state-icon.is-pending{background:#f2f3ec;color:#72804e}
+.payment-order-reference{display:grid;gap:5px;padding:15px;border-radius:12px;background:#f6f8f3;margin:18px 0}
+.payment-order-reference small{font-size:10px;color:var(--muted)}
+.payment-order-reference strong{font-size:15px;color:var(--green-dark)}
+.payment-success-note,.payment-failure-note{font-size:11px;line-height:1.6}
+.payment-result-links{display:flex;justify-content:center;gap:15px;flex-wrap:wrap;margin-top:18px;font-size:12px;font-weight:700;color:var(--green)}
+.payment-history-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--line);font-size:11px}
+.payment-history-row>span:first-child strong,.payment-history-row>span:first-child small{display:block}
+.payment-history-row>span:first-child small{font-size:10px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
+.payment-status{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:5px 9px;background:#f1f3ed;color:#52684e;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
+.payment-status.status-paid,.payment-status.status-cash_collected,.payment-status.status-completed{background:#e7f4e4;color:#28713e}
+.payment-status.status-failed,.payment-status.status-refunded,.payment-status.status-cancelled{background:#fff0ed;color:#a4493b}
+.payment-status.status-pending,.payment-status.status-requested,.payment-status.status-processing{background:#fff5df;color:#886526}
+.order-payment-section,.order-refunds{margin-top:20px;padding-top:12px;border-top:1px solid var(--line)}
+.payment-admin-card{display:grid;gap:12px;padding:16px 0;border-top:1px solid var(--line)}
+.payment-admin-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.payment-admin-heading>div{display:grid;gap:5px;text-align:right}
+.payment-admin-heading small{display:block;font-size:10px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
+.refund-admin-row{display:grid;gap:10px;padding:14px;border:1px solid var(--line);border-radius:13px;background:#fafbf8}
+.refund-admin-row>p{margin:0;font-size:11px;color:#68786e}
+.refund-request-form{padding:14px;border-radius:13px;background:#f6f8f3}
+.report-export-actions{display:flex;gap:9px;flex-wrap:wrap;margin:15px 0}
+.report-table-wrap{width:100%;overflow-x:auto}
+.report-table{width:100%;border-collapse:collapse;min-width:430px;font-size:11px}
+.report-table th,.report-table td{padding:11px 12px;text-align:left;border-bottom:1px solid var(--line)}
+.report-table th{color:#5e725f;background:#f5f8f1;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.notification-preference-row{display:flex!important;flex-direction:row!important;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}
+.notification-preference-row span{display:grid;gap:4px}
+.notification-preference-row strong{font-size:12px;color:#294b36}
+.notification-preference-row small{font-size:10px;color:var(--muted);line-height:1.5;font-weight:500}
+.notification-preference-row input{width:18px!important;min-height:18px!important;accent-color:var(--green);flex:0 0 auto}
+.notification-preference-row.is-disabled{opacity:.6}
+.notification-row small{display:block;font-size:10px;line-height:1.5;color:var(--muted);margin-top:5px}
+.order-history{padding-left:22px}
+.order-history li{padding:0 0 12px 5px}
+.order-history li::marker{color:var(--green)}
+.order-history li strong,.order-history li span,.order-history li small{display:block}
+.order-history li span,.order-history li small{font-size:10px;color:var(--muted);margin-top:3px}
+@media(max-width:640px){
+ .payment-history-row{grid-template-columns:minmax(0,1fr) auto;gap:8px}
+ .payment-history-row>small:last-child{grid-column:1/-1}
+ .payment-admin-heading{flex-direction:column}
+ .payment-admin-heading>div{text-align:left}
+ .report-export-actions{display:grid;grid-template-columns:1fr}
+ .report-export-actions .text-button{width:100%;text-align:left;padding:10px 0}
+ .payment-method-option{align-items:flex-start}
+ .payment-result-links{display:grid;gap:10px}
+}
