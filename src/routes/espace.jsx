@@ -8,7 +8,6 @@ export const Route = createFileRoute("/espace")({ component: WorkspaceRedirect }
 function WorkspaceRedirect() {
   const navigate = useNavigate();
   const [message, setMessage] = useState("Identification de votre espace…");
-  const [requiresApproval, setRequiresApproval] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -18,11 +17,10 @@ function WorkspaceRedirect() {
         const access = await getMyAccessContext({ data: { token } });
         if (!active) return;
         if (access.primaryRole === "customer") {
-          setRequiresApproval(true);
-          setMessage("Votre compte client est actif. Pour rejoindre l'équipe Lama Market comme administrateur ou responsable, l'administrateur principal doit vérifier votre compte et vous attribuer un rôle.");
+          await navigate({ to: "/compte", replace: true });
           return;
         }
-        await navigate({ to: access.destination, replace: true });
+        await navigate({ to: access.destination || "/compte", replace: true });
       } catch (error) {
         if (active) setMessage(error.message || "Connexion requise.");
       }
@@ -32,11 +30,9 @@ function WorkspaceRedirect() {
 
   return <main className="commerce-page"><div className="commerce-container"><section className="commerce-panel workspace-redirect">
     <span className="section-kicker">LAMA MARKET</span>
-    <h1>{requiresApproval ? "Accès professionnel à valider" : "Votre espace de travail"}</h1>
+    <h1>Ouverture de votre espace</h1>
     <p>{message}</p>
-    {requiresApproval
-      ? <Link className="account-submit inline-submit" to="/compte">Consulter mon compte</Link>
-      : <Link className="account-submit inline-submit" to="/auth">Se connecter ou créer un compte</Link>}
+    <Link className="account-submit inline-submit" to="/auth">Se connecter ou créer un compte</Link>
     <p><Link to="/">Retour à la boutique</Link></p>
   </section></div></main>;
 }
