@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 300" role="img" aria-labelledby="title desc">
+<title id="title">Lama Market</title><desc id="desc">Logo Lama Market : lettres rouges, chariot vert et feuilles vertes</desc>
+<g fill="none" stroke="#168447" stroke-linecap="round" stroke-linejoin="round">
+<path d="M72 92 Q61 87 56 101 L52 125 Q50 138 67 141 L81 145 L81 218 Q82 252 117 252 H441" stroke-width="29"/>
+<path d="M112 252 H441" stroke-width="22"/>
+<path d="M140 268 a12 12 0 1 0 0 .1 M410 268 a12 12 0 1 0 0 .1" stroke-width="19"/>
+</g>
+<g fill="#E51D2A" font-family="Arial Rounded MT Bold,Trebuchet MS,Arial,sans-serif" font-size="150" font-weight="900" letter-spacing="-11">
+<text x="102" y="208">lama</text>
+</g>
+<g fill="#168447" stroke="#fff" stroke-width="3" stroke-linejoin="round">
+<path d="M271 91 C282 42 322 20 374 17 C370 69 346 107 301 120 C282 115 273 105 271 91Z"/>
+<path d="M270 93 C245 55 218 52 188 61 C196 99 221 126 257 130 C269 119 274 106 270 93Z"/>
+</g>
+<g fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round">
+<path d="M270 119 Q298 70 353 34 M263 119 Q245 89 213 70"/>
+</g>
+</svg>

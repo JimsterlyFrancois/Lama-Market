@@ -4,7 +4,8 @@ import {
   Search, ShoppingBasket, Leaf, Truck, ShieldCheck, Clock3,
   ChevronRight, SlidersHorizontal, PackageSearch, RefreshCw,
 } from "lucide-react";
-import { getSupabaseClient, isSupabaseConfigured } from "../lib/supabase";
+import { getCatalog, addCartItem, getStorefrontSettings } from "../lib/commerce";
+import { authClient, getAccessToken } from "../lib/auth-client";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -33,6 +34,8 @@ function formatPrice(value) {
 
 function HomePage() {
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [coverUrl, setCoverUrl] = useState("/images/lama-market-cover.webp");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -42,36 +45,11 @@ function HomePage() {
   async function loadProducts() {
     setLoading(true);
     setError("");
-
-    if (!isSupabaseConfigured) {
-      setProducts([]);
-      setLoading(false);
-      setError("Le catalogue n'est pas encore connecté. La configuration de Supabase est nécessaire pour afficher les produits enregistrés.");
-      return;
-    }
-
     try {
-      const client = getSupabaseClient();
-      const allRows = [];
-      const pageSize = 500;
-      let start = 0;
-
-      while (true) {
-        const { data, error: queryError } = await client
-          .from("products")
-          .select("id,name,description,category,price,old_price,stock,badge,rating,reviews,image_url,is_active,sort_order")
-          .eq("is_active", true)
-          .order("sort_order", { ascending: true, nullsFirst: false })
-          .range(start, start + pageSize - 1);
-
-        if (queryError) throw queryError;
-        const rows = data ?? [];
-        allRows.push(...rows);
-        if (rows.length < pageSize) break;
-        start += pageSize;
-      }
-
-      setProducts(allRows);
+      const [result, appearance] = await Promise.all([getCatalog(), getStorefrontSettings()]);
+      setProducts(result.products ?? []);
+      setCategories(result.categories ?? []);
+      setCoverUrl(appearance.heroCoverUrl || "/images/lama-market-cover.webp");
     } catch (loadError) {
       setError(loadError?.message || "Impossible de charger le catalogue pour le moment.");
       setProducts([]);
@@ -110,7 +88,7 @@ function HomePage() {
 
       <header className="site-header">
         <a className="brand" href="/" aria-label="Lama Market, accueil">
-          <span className="brand-mark"><Leaf size={25} strokeWidth={2.5} /></span>
+          <span className="brand-mark"><img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" className="brand-logo-icon" width="32" height="32" /></span>
           <span className="brand-name">Lama <strong>Market</strong><small>FRAÎCHEUR & BONNES AFFAIRES</small></span>
         </a>
         <nav className="header-links" aria-label="Navigation principale">
@@ -129,23 +107,23 @@ function HomePage() {
           <a className="primary-button" href="#catalogue">Découvrir le catalogue <ChevronRight size={18} /></a>
           <div className="hero-trust"><span><ShieldCheck size={16} /> Sélection de produits</span><span><Clock3 size={16} /> Catalogue actualisé</span></div>
         </div>
-        <div className="hero-art" aria-label="Illustration de panier de courses">
-          <div className="hero-orbit orbit-one" />
-          <div className="hero-orbit orbit-two" />
-          <div className="hero-basket">
-            <div className="basket-goods"><span>🥑</span><span>🍊</span><span>🥖</span><span>🥬</span></div>
-            <div className="basket-body"><div className="basket-lines" /></div>
-            <div className="basket-handle" />
-          </div>
-          <div className="floating-tag tag-fresh">✦ Fraîcheur</div>
-          <div className="floating-tag tag-choice">✓ Bons choix</div>
+        <div className="hero-art hero-cover-art">
+          <img
+            className="hero-cover-image"
+            src={coverUrl}
+            alt="Une cliente découvre les produits et les rayons de Lama Market"
+            width="384"
+            height="384"
+            fetchPriority="high"
+          />
+          <span className="hero-image-tag">Lama Market · Qualité, variété au meilleur prix</span>
         </div>
       </section>
 
       <section className="benefits" id="avantages">
         <div><span className="benefit-icon"><Truck size={19} /></span><span><strong>Pratique</strong><small>Un catalogue accessible partout</small></span></div>
         <div><span className="benefit-icon"><ShieldCheck size={19} /></span><span><strong>Clair et transparent</strong><small>Prix et informations visibles</small></span></div>
-        <div><span className="benefit-icon"><Leaf size={19} /></span><span><strong>Votre marché</strong><small>Une sélection pour le quotidien</small></span></div>
+        <div><span className="benefit-icon"><img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" className="service-logo-icon" width="25" height="25" /></span><span><strong>Votre marché</strong><small>Une sélection pour le quotidien</small></span></div>
       </section>
 
       <section className="catalog-section" id="catalogue">
@@ -171,7 +149,7 @@ function HomePage() {
         </div>
 
         <div className="category-list" id="categories" aria-label="Filtrer par catégorie">
-          {CATEGORIES.map((item) => (
+          {[{value:"tous",label:"Tous les produits"},...categories.map((item)=>({value:item.slug,label:item.name}))].map((item) => (
             <button key={item.value} type="button" className={category === item.value ? "category-chip selected" : "category-chip"} onClick={() => setCategory(item.value)}>
               {item.label}
             </button>
@@ -196,13 +174,13 @@ function HomePage() {
           </div>
         ) : (
           <div className="product-grid">
-            {visibleProducts.map((product) => <ProductCard key={product.id} product={product} />)}
+            {visibleProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={async () => { try { const session = await authClient?.getSession(); if (!session?.data?.user) { window.location.href = "/auth"; return; } const token = await getAccessToken(); await addCartItem({ data: { token, productId: product.id, quantity: 1 } }); window.location.href = "/panier"; } catch (error) { window.alert(error.message || "Impossible d’ajouter ce produit."); } }} />)}
           </div>
         )}
       </section>
 
       <footer className="site-footer">
-        <a className="brand footer-brand" href="#"><span className="brand-mark"><Leaf size={22} /></span><span className="brand-name">Lama <strong>Market</strong><small>FRAÎCHEUR & BONNES AFFAIRES</small></span></a>
+        <a className="brand footer-brand" href="#"><span className="brand-mark"><img src="/images/lama-market-logo.svg" alt="" aria-hidden="true" className="brand-logo-icon" width="30" height="30" /></span><span className="brand-name">Lama <strong>Market</strong><small>FRAÎCHEUR & BONNES AFFAIRES</small></span></a>
         <p>Votre marché en ligne, à Cap-Haïtien.</p>
         <span>© {new Date().getFullYear()} Lama Market. Tous droits réservés.</span>
       </footer>
@@ -210,13 +188,15 @@ function HomePage() {
   );
 }
 
-function ProductCard({ product }) {
-  const categoryName = CATEGORIES.find((item) => item.value === product.category)?.label || product.category;
+function ProductCard({ product, onAdd }) {
+  const categoryName = product.category_name || CATEGORIES.find((item) => item.value === product.category)?.label || product.category;
+  const gallery = Array.isArray(product.images) ? product.images : [];
+  const mainImage = gallery.find((image) => image.isPrimary)?.url || gallery[0]?.url || product.image_url;
   const available = Number(product.stock ?? 0) > 0;
   return (
     <article className="product-card">
       <div className="product-image-wrap">
-        {product.image_url ? <img className="product-image" src={product.image_url} alt={product.name} loading="lazy" /> : <div className="product-placeholder"><Leaf size={35} /><span>Lama Market</span></div>}
+        {mainImage ? <img className="product-image" src={mainImage} alt={product.name} loading="lazy" /> : <div className="product-placeholder"><img src="/images/lama-market-logo.svg" alt="" className="product-placeholder-logo" width="52" height="52" /><span>Lama Market</span></div>}
         {product.badge && <span className="product-badge">{product.badge}</span>}
         {!available && <span className="stock-badge">Épuisé</span>}
       </div>
@@ -225,9 +205,10 @@ function ProductCard({ product }) {
         <h3>{product.name}</h3>
         {product.description && <p className="product-description">{product.description}</p>}
         <div className="product-bottom">
-          <div><strong className="product-price">{formatPrice(product.price)}</strong>{product.old_price && <del>{formatPrice(product.old_price)}</del>}</div>
+          <div><strong className="product-price">{formatPrice(product.price)}</strong>{product.old_price && Number(product.old_price) > Number(product.price) && <del>{formatPrice(product.old_price)}</del>}</div>
           <span className={available ? "stock-status" : "stock-status unavailable"}>{available ? "Disponible" : "Indisponible"}</span>
         </div>
+        <button className="add-cart-button" type="button" disabled={!available} onClick={onAdd}>Ajouter au panier</button>
       </div>
     </article>
   );
