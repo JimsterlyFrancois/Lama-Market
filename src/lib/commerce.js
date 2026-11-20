@@ -246,9 +246,11 @@ export const adminCreateDeliveryZone = createServerFn({ method: "POST" }).valida
   await requireRole(data.token, ["admin"]);
   const city=clean(data.city,100), name=clean(data.name,100), fee=Number(data.fee);
   if(!city||!name||!Number.isFinite(fee)||fee<0) fail("Nom, ville et tarif valides requis.");
+  const minDays=Math.max(0,Math.floor(Number(data.minDays)||1)),maxDays=Math.max(1,Math.floor(Number(data.maxDays)||3));
+  if(maxDays<minDays)fail("Le délai maximum doit être supérieur au délai minimum.");
   const db=await getDb();
-  const zone=await db.query("insert into public.delivery_zones(name,city,area,estimated_min_days,estimated_max_days) values($1,$2,$3,$4,$5) returning id",[name,city,clean(data.area,100)||null,Math.max(0,Number(data.minDays)||1),Math.max(1,Number(data.maxDays)||3)]);
-  await db.query("insert into public.delivery_rates(zone_id,fee,free_from) values($1,$2,$3)",[zone.rows[0].id,fee,data.freeFrom?Number(data.freeFrom):null]);
+  const zone=await db.query("insert into public.delivery_zones(name,department,city,area,estimated_min_days,estimated_max_days,is_active) values($1,$2,$3,$4,$5,$6,true) returning id",[name,clean(data.department,100)||null,city,clean(data.area,100)||null,minDays,maxDays]);
+  await db.query("insert into public.delivery_rates(zone_id,fee,free_from,is_active) values($1,$2,$3,true)",[zone.rows[0].id,fee,data.freeFrom===""||data.freeFrom==null?null:Number(data.freeFrom)]);
   return { id:zone.rows[0].id };
 });
 
