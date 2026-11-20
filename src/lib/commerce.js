@@ -103,10 +103,9 @@ export const removeCartItem = createServerFn({ method: "POST" }).validator((data
 
 export const checkout = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   const user = await ensureCustomer(data.token);
-  const paymentMethod = ["cash_on_delivery","moncash","natcash"].includes(data.paymentMethod) ? data.paymentMethod : "cash_on_delivery";
-  const onlinePayment = paymentMethod === "moncash" || paymentMethod === "natcash";
-  const paymentAvailability = await (await import("./payments.server")).getPaymentAvailability();
-  if (onlinePayment && !paymentAvailability[paymentMethod]) fail("Ce moyen de paiement n'est pas encore activé. Choisissez le paiement à la livraison.");
+  const paymentMethod = data.paymentMethod || "cash_on_delivery";
+  if (paymentMethod !== "cash_on_delivery") fail("Les paiements MonCash et NatCash ne sont pas encore connectés. Choisissez le paiement à la livraison.");
+  const onlinePayment = false;
   const db = await getDb();
   await releaseExpiredStockReservations(db);
   let address = data.address || {};
@@ -128,7 +127,7 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
     );
     if (prior.rowCount) {
       await client.query("commit");
-      const repeatedOnline = ["moncash","natcash"].includes(prior.rows[0].method);
+      const repeatedOnline = false;
       return { id: prior.rows[0].id, orderNumber: prior.rows[0].order_number, paymentMethod: prior.rows[0].method, paymentRequired: repeatedOnline };
     }
     const cart = await client.query("select id from public.carts where user_id=$1 and status='active' for update", [user.id]);
@@ -151,7 +150,6 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
     const deliveryFee = zone.rows[0].free_from !== null && subtotal >= Number(zone.rows[0].free_from) ? 0 : Number(zone.rows[0].fee);
     const promotion = await couponDiscount(client,data.couponCode,user.id,subtotal,true);
     const total = subtotal + deliveryFee - promotion.discount;
-    if (paymentMethod === "natcash" && total < 20) fail("Le montant minimum pour NatCash est de 20 HTG.");
     const orderNumber = "LM-" + new Date().toISOString().slice(0,10).replaceAll("-","") + "-" + crypto.randomUUID().slice(0,8).toUpperCase();
     const snapshot = {
       recipientName: clean(address.recipientName,180), phone: clean(address.phone,40),
@@ -172,10 +170,10 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
       const changed = await client.query("update public.products set stock=stock-$2,updated_at=now() where id=$1 and stock >= $2 returning id", [item.product_id,item.quantity]);
       if (!changed.rowCount) fail("Le stock a changé. Actualisez votre panier.");
       const line = await client.query("insert into public.order_items(order_id,product_id,product_name,product_sku,unit_price,quantity,line_total) values($1,$2,$3,$4,$5,$6,$7) returning id", [order.rows[0].id,item.product_id,item.name,item.sku,item.price,item.quantity,Number(item.price)*item.quantity]);
-      await client.query("insert into public.stock_reservations(order_item_id,product_id,quantity,status,expires_at) values($1,$2,$3,'reserved',now()+case when $4 then interval '20 minutes' else interval '48 hours' end)", [line.rows[0].id,item.product_id,item.quantity,onlinePayment]);
+      await client.query("insert into public.stock_reservations(order_item_id,product_id,quantity,status,expires_at) values($1,$2,$3,'reserved',now()+interval '48 hours')", [line.rows[0].id,item.product_id,item.quantity]);
       await client.query("insert into public.stock_movements(product_id,quantity_delta,movement_type,reference_type,reference_id,note,created_by) values($1,$2,'sale','order',$3,'Réservation au checkout',$4)", [item.product_id,-item.quantity,order.rows[0].id,user.id]);
     }
-    await client.query("insert into public.payments(order_id,method,amount,status,idempotency_key,provider) values($1,$2,$3,'pending',$4,$5)", [order.rows[0].id,paymentMethod,total,"pay-"+idem,onlinePayment?"tranzak":null]);
+    await client.query("insert into public.payments(order_id,method,amount,status,idempotency_key,provider) values($1,$2,$3,'pending',$4,$5)", [order.rows[0].id,paymentMethod,total,"pay-"+idem,null]);
     await client.query("insert into public.deliveries(order_id,zone_id,fee,status) values($1,$2,$3,'unassigned')", [order.rows[0].id,zone.rows[0].id,deliveryFee]);
     await client.query("insert into public.order_status_history(order_id,new_status,note,actor_id) values($1,$2,$3,$4)", [order.rows[0].id,initialOrderStatus,onlinePayment?"Commande créée, paiement en attente":"Commande créée par le client",user.id]);
     const notification=await client.query("insert into public.notifications(user_id,type,title,message,data) values($1,'order_created',$2,$3,$4) returning id", [user.id,"Commande reçue","Votre commande "+orderNumber+" a été enregistrée.",{orderId:order.rows[0].id,orderNumber,paymentMethod}]);
@@ -937,17 +935,19 @@ export const adminArchiveDeliveryZone=createServerFn({method:"POST"}).validator(
 
 
 export const getPaymentOptions=createServerFn({method:"GET"}).handler(async()=>{
-  return (await import("./payments.server")).getPaymentAvailability();
+  return { provider: null, cash_on_delivery: true, moncash: false, natcash: false, email_notifications: Boolean(process.env.RESEND_API_KEY && process.env.LAMA_MARKET_FROM_EMAIL) };
 });
 
 export const startOrderPayment=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
   const user=await requireUser(data.token);
-  return (await import("./payments.server")).startTranzakPayment({orderId:data.orderId,userId:user.id});
+  fail("Les paiements en ligne ne sont pas activés. Le paiement à la livraison reste disponible.");
 });
 
 export const refreshOrderPayment=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
   const user=await requireUser(data.token);
-  return (await import("./payments.server")).reconcileTranzakPayment({orderId:data.orderId,userId:user.id});
+  const result=await (await getDb()).query("select payment_status from public.orders where id=$1 and customer_id=$2",[data.orderId,user.id]);
+  if(!result.rowCount) fail("Commande introuvable.");
+  return {status:result.rows[0].payment_status==="paid"||result.rows[0].payment_status==="cash_collected"?"completed":result.rows[0].payment_status==="failed"?"failed":"pending"};
 });
 
 
@@ -1087,5 +1087,5 @@ export const adminListNotifications=createServerFn({method:"GET"}).validator((da
 
 export const adminReconcilePendingPayments=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
   await requireRole(data.token,["admin"]);
-  return (await import("./payments.server")).reconcilePendingTranzakPayments({limit:data.limit||50});
+  return {scanned:0,confirmed:0,pending:0,errors:0,skipped:true,message:"Aucun prestataire de paiement en ligne n’est configuré. Les commandes restent en paiement à la livraison."};
 });
