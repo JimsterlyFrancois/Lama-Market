@@ -330,6 +330,36 @@ export const getAdminDeliveries = createServerFn({ method: "GET" }).validator((d
 });
 
 
+export const getStorefrontSettings = createServerFn({ method: "GET" }).handler(async () => {
+  const db = await getDb();
+  const result = await db.query("select value from public.store_settings where key='hero_cover_url' limit 1");
+  const value = result.rows[0]?.value;
+  return { heroCoverUrl: typeof value === "string" ? value : value?.url ?? null };
+});
+
+export const getCoverImageUploadUrl = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
+  await requireRole(data.token, ["admin"]);
+  const storage = await import("./storage.server");
+  return storage.createCoverUpload({ contentType: data.contentType, size: Number(data.size) });
+});
+
+export const saveStorefrontCover = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
+  const admin = await requireRole(data.token, ["admin"]);
+  const endpoint = process.env.AWS_ENDPOINT_URL_S3?.replace(/\/$/, "");
+  const publicUrl = clean(data.publicUrl, 2000);
+  const allowedPrefix = endpoint ? `${endpoint}/product-images/site/covers/` : "";
+  if (!allowedPrefix || !publicUrl.startsWith(allowedPrefix) || !publicUrl.endsWith(".gif")) {
+    fail("L'adresse de la couverture GIF n'est pas valide.");
+  }
+  const db = await getDb();
+  await db.query(
+    "insert into public.store_settings(key,value,updated_by,updated_at) values('hero_cover_url',to_jsonb($2::text),$1,now()) on conflict(key) do update set value=excluded.value,updated_by=excluded.updated_by,updated_at=now()",
+    [admin.id, publicUrl],
+  );
+  return { ok: true, heroCoverUrl: publicUrl };
+});
+
+
 export const getProductImageUploadUrl = createServerFn({ method: "POST" }).validator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
   const storage = await import("./storage.server");
