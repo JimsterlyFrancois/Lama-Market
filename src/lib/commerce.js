@@ -1062,3 +1062,9 @@ export const adminListNotifications=createServerFn({method:"GET"}).validator((da
   );
   return result.rows;
 });
+
+
+export const adminReconcilePendingPayments=createServerFn({method:"POST"}).validator((data)=>data).handler(async({data})=>{
+  await requireRole(data.token,["admin"]);
+  return (await import("./payments.server")).reconcilePendingTranzakPayments({limit:data.limit||50});
+});
