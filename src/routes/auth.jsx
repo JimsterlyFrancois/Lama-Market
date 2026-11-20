@@ -90,7 +90,7 @@ function AuthPage(){
   <Link to="/" className="back-link">← Retour à Lama Market</Link>
   <div className="account-brand">Lama <strong>Market</strong></div>
   <h1>{mode==="signup"?"Créer votre compte":mode==="verify"?"Vérifier votre adresse":mode==="forgot"?"Mot de passe oublié":mode==="reset"?"Nouveau mot de passe":"Connexion"}</h1>
-  <p>{mode==="verify"?"Saisissez le code à 6 chiffres reçu par e-mail.":mode==="reset"?"Saisissez le code reçu et choisissez un nouveau mot de passe.":"Accédez à votre panier, vos commandes et votre suivi de livraison."}</p>
+  <p>{mode==="verify"?"Saisissez le code à 6 chiffres reçu par e-mail.":mode==="reset"?"Saisissez le code reçu et choisissez un nouveau mot de passe.":mode==="signup"?"Créez votre compte Lama Market. Pour accéder à l’espace professionnel, votre compte devra ensuite être validé et recevoir un rôle attribué par l’administrateur principal.":"Accédez à votre panier, vos commandes et votre suivi de livraison. Les accès administrateur et responsable sont attribués séparément après validation."}</p>
   {mainMode&&<div className="auth-switch">
    <button type="button" className={mode==="signin"?"selected":""} onClick={()=>switchMode("signin")}>Se connecter</button>
    <button type="button" className={mode==="signup"?"selected":""} onClick={()=>switchMode("signup")}>Créer un compte</button>
