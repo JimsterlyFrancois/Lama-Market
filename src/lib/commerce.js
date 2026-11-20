@@ -350,6 +350,15 @@ export const courierUpdateDelivery = createServerFn({ method: "POST" }).validato
       data:{orderId:delivery.rows[0].order_id,orderNumber:delivery.rows[0].order_number,status:data.status},
     });
     return {ok:true};
+    if(data.status==="failed"||data.status==="returned"){
+      await (await import("./notifications.server")).createAdminNotification(db,{
+        type:"delivery_attention",
+        title:data.status==="failed"?"Échec de livraison à traiter":"Retour de commande",
+        message:"La commande "+delivery.rows[0].order_number+" nécessite une action administrative. "+(clean(data.failureReason,300)||clean(data.note,300)),
+        data:{orderId:delivery.rows[0].order_id,deliveryId:data.deliveryId,status:data.status},
+      });
+    }
+
   }catch(e){await client.query("rollback");throw e;}finally{client.release();}
 });
 
@@ -430,6 +439,15 @@ export const adminUpdateOrderStatus = createServerFn({ method: "POST" }).validat
       data:{orderId:data.orderId,orderNumber:order.rows[0].order_number,status:data.status},
     });
     return {ok:true};
+    if(data.status==="cancelled"){
+      await (await import("./notifications.server")).createAdminNotification(db,{
+        type:"order_cancelled",
+        title:"Commande annulée",
+        message:"La commande "+order.rows[0].order_number+" a été annulée par l'administration.",
+        data:{orderId:data.orderId,orderNumber:order.rows[0].order_number},
+      });
+    }
+
   } catch(e) { await client.query("rollback"); throw e; } finally { client.release(); }
 });
 
