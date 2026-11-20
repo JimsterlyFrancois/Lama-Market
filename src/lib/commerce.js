@@ -99,6 +99,7 @@ export const checkout = createServerFn({ method: "POST" }).validator((data) => d
   const user = await ensureCustomer(data.token);
   if (data.paymentMethod !== "cash_on_delivery") fail("Seul le paiement à la livraison est actuellement activé.");
   const db = await getDb();
+  await releaseExpiredStockReservations(db);
   let address = data.address || {};
   if (data.addressId) {
     const saved = await db.query("select recipient_name,phone,address_line,department,city,area,landmark,delivery_instructions from public.addresses where id=$1 and user_id=$2", [data.addressId,user.id]);
@@ -178,8 +179,9 @@ export const getMyOrders = createServerFn({ method: "GET" }).validator((data) =>
 });
 
 export const getAdminDashboard = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
-  await requireRole(data.token, ["admin"]);
+  const admin = await requireRole(data.token, ["admin"]);
   const db = await getDb();
+  await releaseExpiredStockReservations(db, admin.id);
   const [stats, orders, lowStock, couriers, products] = await Promise.all([
     db.query("select count(*)::int total_orders,count(*) filter(where status in ('pending','confirmed','preparing','ready_for_delivery'))::int active_orders,coalesce(sum(total) filter(where payment_status in ('paid','cash_collected')),0)::numeric(12,2) revenue from public.orders"),
     db.query("select id,order_number,status,payment_status,delivery_status,total,created_at from public.orders order by created_at desc limit 12"),
