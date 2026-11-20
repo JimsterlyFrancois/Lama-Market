@@ -14,10 +14,21 @@ const clean = (value, max = 500) => String(value ?? "").trim().slice(0, max);
 export const getCatalog = createServerFn({ method: "GET" }).handler(async () => {
   const db = await getDb();
   const [products, categories] = await Promise.all([
-    db.query("select id,name,description,category,price,old_price,stock,badge,rating,reviews,image_url,is_active,sort_order,sku,slug,is_featured from public.products where is_active=true and deleted_at is null order by is_featured desc,sort_order asc,name asc"),
+    db.query(`select p.id,p.name,p.description,p.category,p.price,p.old_price,p.discount_ends_at,p.stock,p.badge,p.rating,p.reviews,p.image_url,p.is_active,p.sort_order,p.sku,p.slug,p.is_featured,
+      coalesce((select json_agg(json_build_object('id',pi.id,'storage_key',pi.storage_key,'altText',pi.alt_text,'isPrimary',pi.is_primary,'sortOrder',pi.sort_order) order by pi.is_primary desc,pi.sort_order,pi.created_at) from public.product_images pi where pi.product_id=p.id),'[]'::json) images
+      from public.products p where p.is_active=true and p.deleted_at is null order by p.is_featured desc,p.sort_order asc,p.name asc`),
     db.query("select slug,name from public.categories where is_active=true order by sort_order"),
   ]);
-  return { products: products.rows, categories: categories.rows };
+  const endpoint = process.env.AWS_ENDPOINT_URL_S3?.replace(/\/$/, "");
+  const imageBase = endpoint ? `${endpoint}/product-images/` : "";
+  const rows = products.rows.map((product) => ({
+    ...product,
+    images: (product.images || []).map((image) => ({
+      ...image,
+      url: image.url || (imageBase && image.storage_key ? imageBase + image.storage_key : null),
+    })),
+  }));
+  return { products: rows, categories: categories.rows };
 });
 
 export const getMyProfile = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
@@ -166,7 +177,7 @@ export const getAdminDashboard = createServerFn({ method: "GET" }).validator((da
     db.query("select id,order_number,status,payment_status,delivery_status,total,created_at from public.orders order by created_at desc limit 12"),
     db.query("select id,name,stock,low_stock_threshold from public.products where is_active=true and stock<=low_stock_threshold order by stock asc limit 20"),
     db.query("select up.user_id,up.display_name,up.phone,up.employment_type,up.is_active from public.courier_profiles up order by up.display_name"),
-    db.query("select id,name,description,category,price,old_price,stock,is_active,image_url,sku,low_stock_threshold from public.products where deleted_at is null order by created_at desc limit 100"),
+    db.query("select p.id,p.name,p.description,p.category,p.price,p.old_price,p.discount_ends_at,p.stock,p.is_active,p.image_url,p.sku,p.slug,p.low_stock_threshold,coalesce((select json_agg(json_build_object('id',pi.id,'storage_key',pi.storage_key,'alt_text',pi.alt_text,'is_primary',pi.is_primary,'sort_order',pi.sort_order) order by pi.is_primary desc,pi.sort_order,pi.created_at) from public.product_images pi where pi.product_id=p.id),'[]'::json) images from public.products p where p.deleted_at is null order by p.created_at desc limit 100"),
   ]);
   return { stats: stats.rows[0], orders: orders.rows, lowStock: lowStock.rows, couriers: couriers.rows, products: products.rows };
 });
@@ -229,7 +240,7 @@ export const adminAssignCourier = createServerFn({ method: "POST" }).validator((
 export const getCourierDeliveries = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   const courier=await requireRole(data.token,["courier"]);
   const db=await getDb();
-  const result=await db.query("select d.id,d.status,d.fee,d.scheduled_at,o.order_number,o.total,o.payment_status from public.deliveries d join public.orders o on o.id=d.order_id where d.courier_id=$1 order by d.created_at desc",[courier.id]);
+  const result=await db.query("select d.id,d.status,d.fee,d.scheduled_at,d.recipient_name,d.proof_url,d.failure_reason,d.courier_note,o.id order_id,o.order_number,o.total,o.payment_status,o.address_snapshot,o.customer_note from public.deliveries d join public.orders o on o.id=d.order_id where d.courier_id=$1 order by d.created_at desc",[courier.id]);
   return result.rows;
 });
 
@@ -245,13 +256,20 @@ export const courierUpdateDelivery = createServerFn({ method: "POST" }).validato
     if(!delivery.rowCount) fail("Livraison introuvable.");
     const transitions = { assigned:["preparing","in_transit","failed"], preparing:["in_transit","failed"], in_transit:["delivered","failed"], failed:["in_transit","returned"], returned:[], delivered:[] };
     if (!(transitions[delivery.rows[0].status] || []).includes(data.status)) fail("Cette transition de livraison n'est pas autorisée.");
+    if (data.status === "failed" && !clean(data.failureReason,500)) fail("Indiquez la raison de l'échec de livraison.");
+    if (data.status === "returned" && !clean(data.note,500)) fail("Ajoutez une note expliquant le retour.");
+    const proofKey = clean(data.proofUrl,1024);
+    if (proofKey && !proofKey.startsWith("delivery-proofs/")) fail("La preuve doit provenir du stockage sécurisé des livraisons.");
     if (data.status === "delivered" && delivery.rows[0].payment_status === "cash_due" && data.cashCollected !== true) fail("Confirmez la réception du paiement en espèces avant de clôturer cette livraison.");
-    await client.query("update public.deliveries set status=$2,picked_up_at=case when $2='in_transit' then now() else picked_up_at end,delivered_at=case when $2='delivered' then now() else delivered_at end,recipient_name=$3,proof_url=$4,failure_reason=$5,courier_note=$6,updated_at=now() where id=$1",[data.deliveryId,data.status,clean(data.recipientName,120)||null,clean(data.proofUrl,1000)||null,clean(data.failureReason,500)||null,clean(data.note,500)||null]);
+    await client.query("update public.deliveries set status=$2,picked_up_at=case when $2='in_transit' then now() else picked_up_at end,delivered_at=case when $2='delivered' then now() else delivered_at end,recipient_name=$3,proof_url=$4,failure_reason=$5,courier_note=$6,updated_at=now() where id=$1",[data.deliveryId,data.status,clean(data.recipientName,120)||null,proofKey||null,clean(data.failureReason,500)||null,clean(data.note,500)||null]);
     await client.query("update public.orders set delivery_status=$2,updated_at=now() where id=$1",[delivery.rows[0].order_id,data.status]);
-    await client.query("insert into public.delivery_events(delivery_id,status,note,proof_url,actor_id) values($1,$2,$3,$4,$5)",[data.deliveryId,data.status,clean(data.note,500)||null,clean(data.proofUrl,1000)||null,courier.id]);
-    if(data.status==="delivered" && data.cashCollected===true){
-      await client.query("update public.payments set status='cash_collected',paid_at=now(),updated_at=now() where order_id=$1 and method='cash_on_delivery'",[delivery.rows[0].order_id]);
-      await client.query("update public.orders set payment_status='cash_collected',status='completed',completed_at=now(),updated_at=now() where id=$1",[delivery.rows[0].order_id]);
+    await client.query("insert into public.delivery_events(delivery_id,status,note,proof_url,actor_id) values($1,$2,$3,$4,$5)",[data.deliveryId,data.status,clean(data.note,500)||null,proofKey||null,courier.id]);
+    if(data.status==="delivered"){
+      if(data.cashCollected===true){
+        await client.query("update public.payments set status='cash_collected',paid_at=now(),updated_at=now() where order_id=$1 and method='cash_on_delivery'",[delivery.rows[0].order_id]);
+        await client.query("update public.orders set payment_status='cash_collected' where id=$1",[delivery.rows[0].order_id]);
+      }
+      await client.query("update public.orders set status='completed',completed_at=now(),updated_at=now() where id=$1 and payment_status in ('paid','cash_collected')",[delivery.rows[0].order_id]);
       await client.query("update public.stock_reservations set status='consumed',consumed_at=now() where order_item_id in(select id from public.order_items where order_id=$1) and status='reserved'",[delivery.rows[0].order_id]);
     }
     await client.query("insert into public.notifications(user_id,type,title,message,data) select customer_id,'delivery_update','Mise à jour de livraison',$2,$3 from public.orders where id=$1",[delivery.rows[0].order_id,"Votre livraison est maintenant : "+data.status,{orderId:delivery.rows[0].order_id}]);
@@ -325,7 +343,7 @@ export const adminUpdateOrderStatus = createServerFn({ method: "POST" }).validat
 export const getAdminDeliveries = createServerFn({ method: "GET" }).validator((data) => data).handler(async ({ data }) => {
   await requireRole(data.token, ["admin"]);
   const db = await getDb();
-  const result = await db.query("select d.id,d.status,d.fee,o.order_number,o.total,cp.display_name courier_name,cp.user_id courier_id from public.deliveries d join public.orders o on o.id=d.order_id left join public.courier_profiles cp on cp.user_id=d.courier_id order by d.created_at desc limit 50");
+  const result = await db.query("select d.id,d.status,d.fee,d.scheduled_at,d.proof_url,d.failure_reason,d.courier_note,o.id order_id,o.order_number,o.total,o.payment_status,o.address_snapshot,o.customer_id,cp.display_name courier_name,cp.user_id courier_id from public.deliveries d join public.orders o on o.id=d.order_id left join public.courier_profiles cp on cp.user_id=d.courier_id order by d.created_at desc limit 50");
   return result.rows;
 });
 
@@ -372,7 +390,11 @@ export const adminUpdateProduct = createServerFn({ method: "POST" }).validator((
   const name=clean(data.name,180), category=clean(data.category,80), price=Number(data.price);
   if(!name||!category||!Number.isFinite(price)||price<0) fail("Nom, catégorie et prix valides requis.");
   const db=await getDb();
-  const result=await db.query("update public.products set name=$2,description=$3,category=$4,price=$5,old_price=$6,image_url=$7,is_active=$8,low_stock_threshold=$9,updated_at=now() where id=$1 and deleted_at is null returning id",[data.productId,name,clean(data.description,2000)||null,category,price,data.oldPrice?Number(data.oldPrice):null,clean(data.imageUrl,1000)||null,data.isActive===true,Math.max(0,Number(data.lowStockThreshold)||5)]);
+  const oldPrice = data.oldPrice === "" || data.oldPrice == null ? null : Number(data.oldPrice);
+  if (oldPrice !== null && (!Number.isFinite(oldPrice) || oldPrice < price)) fail("Le prix normal doit être supérieur ou égal au prix actuel.");
+  const discountEndsAt = data.discountEndsAt ? new Date(data.discountEndsAt) : null;
+  if (discountEndsAt && Number.isNaN(discountEndsAt.getTime())) fail("Date de fin promotionnelle invalide.");
+  const result=await db.query("update public.products set name=$2,description=$3,category=$4,price=$5,old_price=$6,discount_ends_at=$7,image_url=$8,is_active=$9,low_stock_threshold=$10,updated_at=now() where id=$1 and deleted_at is null returning id",[data.productId,name,clean(data.description,2000)||null,category,price,oldPrice,discountEndsAt,clean(data.imageUrl,1000)||null,data.isActive===true,Math.max(0,Number(data.lowStockThreshold)||5)]);
   if(!result.rowCount) fail("Produit introuvable.");
   return {ok:true};
 });
