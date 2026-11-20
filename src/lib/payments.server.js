@@ -426,3 +426,40 @@ export async function reconcileTranzakPayment({ orderId, userId }) {
   if (eventName) await applyTranzakPaymentState(db, data, eventName, false, { source: "server_reconciliation", data });
   return { status: data.status, orderNumber: row.order_number };
 }
+
+
+export async function reconcilePendingTranzakPayments({ limit = 50 } = {}) {
+  const db = getDb();
+  if (!process.env.TRANZAK_API_KEY || !process.env.TRANZAK_WEBHOOK_SECRET) {
+    const error = new Error("Les clés Tranzak ne sont pas configurées pour la prévisualisation.");
+    error.status = 503;
+    throw error;
+  }
+  const pending = await db.query(
+    `select distinct o.id order_id,o.customer_id,o.order_number
+     from public.orders o
+     join public.payments p on p.order_id=o.id
+     where p.provider='tranzak' and p.status='pending'
+       and p.method in ('moncash','natcash')
+       and o.payment_status='pending'
+     order by o.created_at asc limit $1`,
+    [Math.min(100, Math.max(1, Math.floor(Number(limit) || 50)))],
+  );
+  const results = [];
+  for (const row of pending.rows) {
+    try {
+      const status = await reconcileTranzakPayment({ orderId: row.order_id, userId: row.customer_id });
+      results.push({ orderNumber: row.order_number, status: status.status, ok: true });
+    } catch (error) {
+      results.push({ orderNumber: row.order_number, status: "error", ok: false, message: String(error?.message || "Échec de vérification").slice(0, 180) });
+    }
+  }
+  return {
+    scanned: results.length,
+    confirmed: results.filter(item => item.status === "completed").length,
+    failed: results.filter(item => item.status === "failed").length,
+    pending: results.filter(item => ["pending","processing"].includes(item.status)).length,
+    errors: results.filter(item => !item.ok).length,
+    results,
+  };
+}
