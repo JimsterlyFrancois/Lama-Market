@@ -82,6 +82,7 @@ export default function Header() {
             </Link>
             <ThemeToggle />
             <AccountMenu />
+            <Link to="/auth" className="inline-flex h-10 items-center justify-center rounded-full bg-primary px-4 text-[13px] font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">Connexion</Link>
             <Link
               to="/favoris"
               aria-label={`Mes favoris (${favorites.length})`}
