@@ -194,7 +194,7 @@ test("P2: login and the professional profile entry are visible and staff access 
   assert.match(workspace,/navigate\(\{ to: "\/compte", replace: true \}\)/);
   assert.match(menu,/Acheteur · Actif/);
   assert.match(menu,/Livreur/);
-  assert.match(menu,/"admin": "ADM"/);
+  assert.match(menu,/admin:\s*"ADM"/);
   assert.match(workspace,/getMyAccessContext/);
  });
 
