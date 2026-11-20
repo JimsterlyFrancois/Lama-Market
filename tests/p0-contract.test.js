@@ -190,7 +190,11 @@ test("P2: login and the professional profile entry are visible and staff access 
   assert.match(menu,/Espace professionnel/);
   assert.match(auth,/validé et recevoir un rôle attribué par l’administrateur principal/);
   assert.match(serverAuth,/requireRole/);
-  assert.match(workspace,/administrateur principal doit vérifier votre compte et vous attribuer un rôle/);
+  assert.match(workspace,/navigate\(\{ to: "\/compte", replace: true \}\)/);
+  assert.match(menu,/Acheteur · Actif/);
+  assert.match(menu,/Livreur/);
+  assert.match(menu,/"admin": "ADM"/);
+  assert.match(workspace,/getMyAccessContext/);
  });
 
 test("P2: refunds are auditable and cannot be closed without a transaction reference and private proof", async () => {
@@ -258,4 +262,20 @@ test("P2: responsive accessibility settings and reduced-motion support remain in
   assert.match(home,/aria-label="Rechercher un produit"/);
   assert.match(home,/loading="lazy"/);
   assert.match(admin,/report-table-wrap/);
+});
+
+
+test("P2: verified accounts open settings directly and show their database-assigned role", async () => {
+  const workspace = await read("../src/routes/espace.jsx");
+  const menu = await read("../src/components/site/AccountMenu.jsx");
+  const account = await read("../src/routes/compte.jsx");
+  const commerce = await read("../src/lib/commerce.js");
+  assert.match(workspace,/access\.primaryRole === "customer"/);
+  assert.match(workspace,/to: "\/compte", replace: true/);
+  assert.match(menu,/Acheteur · Actif/);
+  assert.match(menu,/admin: "ADM"/);
+  assert.match(menu,/courier: "Livreur"/);
+  assert.match(account,/Acheteur · Actif/);
+  assert.match(commerce,/select staff_role from public\.staff_members/);
+  assert.match(commerce,/courier_active/);
 });
