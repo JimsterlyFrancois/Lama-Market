@@ -10,7 +10,7 @@ import {
  adminListCoupons,adminUpsertCoupon,adminArchiveCoupon,adminAddProductImage,
  adminSetPrimaryProductImage,adminDeleteProductImage,adminGetProductStockHistory,
  adminReleaseExpiredReservations,adminListPayments,adminCreateRefund,adminUpdateRefund,
- getRefundProofUploadUrl,getRefundProofDownloadUrl,adminListNotifications,
+ getRefundProofUploadUrl,getRefundProofDownloadUrl,adminListNotifications,adminReconcilePendingPayments,
 } from "../lib/commerce";
 export const Route=createFileRoute("/admin")({component:AdminPage});
 const money=new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
@@ -25,6 +25,7 @@ function AdminPage(){
  const [data,setData]=useState(null),[deliveries,setDeliveries]=useState([]),[reports,setReports]=useState(null),[deliveryZones,setDeliveryZones]=useState([]),[editingZoneId,setEditingZoneId]=useState("");
  const [categories,setCategories]=useState([]),[customers,setCustomers]=useState([]),[coupons,setCoupons]=useState([]),[staff,setStaff]=useState([]);
  const [payments,setPayments]=useState([]),[adminNotifications,setAdminNotifications]=useState([]);
+ const [reconcileResult,setReconcileResult]=useState(null);
  const [newStaff,setNewStaff]=useState(emptyStaff);
  const [message,setMessage]=useState("Chargement du tableau de bord…"),[busy,setBusy]=useState(false),[coverUrl,setCoverUrl]=useState("");
  const [product,setProduct]=useState(emptyProduct),[zone,setZone]=useState(emptyZone),[courier,setCourier]=useState(emptyCourier);
@@ -127,6 +128,17 @@ function AdminPage(){
  async function saveCoupon(e){
   e.preventDefault();const ok=await act(adminUpsertCoupon,{...coupon,couponId:editingCoupon||undefined,discountValue:Number(coupon.discountValue),minimumOrder:Number(coupon.minimumOrder),maxUses:coupon.maxUses===""?null:Number(coupon.maxUses),startsAt:coupon.startsAt||null,endsAt:coupon.endsAt||null},"Promotion enregistrée.");
   if(ok){setCoupon(emptyCoupon);setEditingCoupon("");}
+ }
+ async function reconcilePayments(){
+  setBusy(true);setMessage("");setReconcileResult(null);
+  try{
+   const token=await getAccessToken();
+   const result=await adminReconcilePendingPayments({data:{token,limit:50}});
+   setReconcileResult(result);
+   setMessage(`Vérification terminée : ${result.scanned} paiement(s), ${result.confirmed} confirmé(s), ${result.pending} en attente, ${result.errors} erreur(s).`);
+   await load();
+  }catch(e){setMessage(e.message||"Impossible de vérifier les paiements.");}
+  finally{setBusy(false);}
  }
  async function requestRefund(paymentId,amount,reason){
   return act(adminCreateRefund,{paymentId,amount:Number(amount),reason,idempotencyKey:crypto.randomUUID()},"Demande de remboursement enregistrée. Son paiement reste à effectuer manuellement.");
@@ -310,6 +322,8 @@ function AdminPage(){
     <section className="commerce-panel">
      <div className="staff-section-heading"><div><span className="section-kicker">ENCAISSEMENTS</span><h2>Historique des paiements et remboursements</h2></div><span className="staff-count">{payments.length}</span></div>
      <p className="muted-note">Le remboursement est enregistré après son exécution effective hors boutique. La référence de transaction et le justificatif sont obligatoires pour le clôturer.</p>
+     <button type="button" className="text-button" disabled={busy} onClick={reconcilePayments}>Vérifier les paiements mobiles en attente</button>
+     {reconcileResult&&<div className="form-message" role="status">{reconcileResult.results?.map((r,i)=><div key={i}>{r.orderNumber} · {r.status}{r.message?" · "+r.message:""}</div>)}</div>}
      {payments.map(payment=><PaymentAdminRow key={payment.id} payment={payment} busy={busy} onRequest={requestRefund} onUpdate={updateRefund} onUpload={uploadRefundProof} onViewProof={viewRefundProof}/>)}
      {!payments.length&&<p className="muted-note">Aucun paiement enregistré.</p>}
     </section>
