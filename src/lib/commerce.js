@@ -282,7 +282,7 @@ export const courierUpdateDelivery = createServerFn({ method: "POST" }).validato
   const client=await db.connect();
   try{
     await client.query("begin");
-    const delivery=await client.query("select d.id,d.order_id,d.status,o.payment_status from public.deliveries d join public.orders o on o.id=d.order_id where d.id=$1 and d.courier_id=$2 for update",[data.deliveryId,courier.id]);
+    const delivery=await client.query("select d.id,d.order_id,d.status,o.status order_status,o.customer_id,o.payment_status from public.deliveries d join public.orders o on o.id=d.order_id where d.id=$1 and d.courier_id=$2 for update",[data.deliveryId,courier.id]);
     if(!delivery.rowCount) fail("Livraison introuvable.");
     const transitions = { assigned:["preparing","in_transit","failed"], preparing:["in_transit","failed"], in_transit:["delivered","failed"], failed:["in_transit","returned"], returned:[], delivered:[] };
     if (!(transitions[delivery.rows[0].status] || []).includes(data.status)) fail("Cette transition de livraison n'est pas autorisée.");
@@ -302,6 +302,17 @@ export const courierUpdateDelivery = createServerFn({ method: "POST" }).validato
       await client.query("update public.orders set status='completed',completed_at=now(),updated_at=now() where id=$1 and payment_status in ('paid','cash_collected')",[delivery.rows[0].order_id]);
       await client.query("update public.stock_reservations set status='consumed',consumed_at=now() where order_item_id in(select id from public.order_items where order_id=$1) and status='reserved'",[delivery.rows[0].order_id]);
     }
+    if(data.status==="returned"){
+      const reservations=await client.query("select id,product_id,quantity from public.stock_reservations where order_item_id in(select id from public.order_items where order_id=$1) and status='reserved' for update",[delivery.rows[0].order_id]);
+      for(const reservation of reservations.rows){
+        await client.query("update public.products set stock=stock+$2,updated_at=now() where id=$1",[reservation.product_id,reservation.quantity]);
+        await client.query("insert into public.stock_movements(product_id,quantity_delta,movement_type,reference_type,reference_id,note,created_by) values($1,$2,'return','order',$3,'Stock retourné après échec de remise',$4)",[reservation.product_id,reservation.quantity,delivery.rows[0].order_id,courier.id]);
+        await client.query("update public.stock_reservations set status='released',released_at=now() where id=$1",[reservation.id]);
+      }
+      await client.query("update public.orders set status='cancelled',cancelled_at=now(),updated_at=now() where id=$1",[delivery.rows[0].order_id]);
+      await client.query("insert into public.order_status_history(order_id,previous_status,new_status,note,actor_id) values($1,$2,'cancelled',$3,$4)",[delivery.rows[0].order_id,delivery.rows[0].order_status,clean(data.note,500),courier.id]);
+    }
+
     await client.query("insert into public.notifications(user_id,type,title,message,data) select customer_id,'delivery_update','Mise à jour de livraison',$2,$3 from public.orders where id=$1",[delivery.rows[0].order_id,"Votre livraison est maintenant : "+data.status,{orderId:delivery.rows[0].order_id}]);
     await client.query("commit");
     return {ok:true};
@@ -755,10 +766,12 @@ async function releaseExpiredStockReservations(db, actorId=null) {
       await client.query("update public.products set stock=stock+$2,updated_at=now() where id=$1",[row.product_id,row.quantity]);
       await client.query("update public.stock_reservations set status='expired',released_at=now() where id=$1",[row.reservation_id]);
       await client.query("insert into public.stock_movements(product_id,quantity_delta,movement_type,reference_type,reference_id,note,created_by) values($1,$2,'reservation_release','order',$3,'Libération après expiration de la réservation',$4)",[row.product_id,row.quantity,row.order_id,actorId]);
-      await client.query("update public.orders set status='cancelled',cancelled_at=now(),updated_at=now() where id=$1",[row.order_id]);
-      await client.query("update public.deliveries set status='failed',failure_reason='Réservation de stock expirée',updated_at=now() where order_id=$1 and status='unassigned'",[row.order_id]);
-      await client.query("insert into public.order_status_history(order_id,previous_status,new_status,note,actor_id) values($1,$2,'cancelled','Expiration de la réservation de stock',$3)",[row.order_id,row.previous_status,actorId]);
-      await client.query("insert into public.notifications(user_id,type,title,message,data) values($1,'order_cancelled','Commande annulée','Votre commande a été annulée car la réservation de stock a expiré.',$2)",[row.customer_id,{orderNumber:row.order_number}]);
+      const cancelled=await client.query("update public.orders set status='cancelled',cancelled_at=now(),updated_at=now() where id=$1 and status in ('pending','confirmed')",[row.order_id]);
+      if(cancelled.rowCount){
+        await client.query("update public.deliveries set status='failed',failure_reason='Réservation de stock expirée',updated_at=now() where order_id=$1 and status='unassigned'",[row.order_id]);
+        await client.query("insert into public.order_status_history(order_id,previous_status,new_status,note,actor_id) values($1,$2,'cancelled','Expiration de la réservation de stock',$3)",[row.order_id,row.previous_status,actorId]);
+        await client.query("insert into public.notifications(user_id,type,title,message,data) values($1,'order_cancelled','Commande annulée','Votre commande a été annulée car la réservation de stock a expiré.',$2)",[row.customer_id,{orderNumber:row.order_number}]);
+      }
     }
     await client.query("commit");return rows.rowCount;
   }catch(e){await client.query("rollback");throw e;}finally{client.release();}
