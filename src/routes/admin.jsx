@@ -6,6 +6,7 @@ import {
  adminCreateCourier,adminAssignCourier,adminUpdateOrderStatus,adminAdjustStock,getProductImageUploadUrl,
  adminUpdateProduct,adminArchiveProduct,getStorefrontSettings,getCoverImageUploadUrl,saveStorefrontCover,
  adminListCategories,adminUpsertCategory,adminArchiveCategory,adminListCustomers,
+ adminListStaff,adminAddStaff,adminUpdateStaff,
  adminListCoupons,adminUpsertCoupon,adminArchiveCoupon,adminAddProductImage,
  adminSetPrimaryProductImage,adminDeleteProductImage,adminGetProductStockHistory,
  adminReleaseExpiredReservations,
@@ -15,12 +16,14 @@ const money=new Intl.NumberFormat("fr-HT",{style:"currency",currency:"HTG"});
 const emptyProduct={name:"",category:"",price:"",oldPrice:"",discountEndsAt:"",stock:"",lowStockThreshold:"5",description:"",imageUrl:"",imageKey:"",sku:"",isActive:true};
 const emptyZone={name:"",city:"Cap-Haïtien",area:"",fee:"",freeFrom:"",minDays:"1",maxDays:"3"};
 const emptyCourier={email:"",displayName:"",phone:"",employmentType:"mandated"};
+const emptyStaff={email:"",displayName:"",phone:"",staffRole:"fulfillment"};
 const emptyCategory={name:"",slug:"",description:"",imageUrl:"",sortOrder:"0",isActive:true};
 const emptyCoupon={code:"",discountType:"percent",discountValue:"10",minimumOrder:"0",maxUses:"",startsAt:"",endsAt:"",isActive:true};
 
 function AdminPage(){
  const [data,setData]=useState(null),[deliveries,setDeliveries]=useState([]),[reports,setReports]=useState(null);
- const [categories,setCategories]=useState([]),[customers,setCustomers]=useState([]),[coupons,setCoupons]=useState([]);
+ const [categories,setCategories]=useState([]),[customers,setCustomers]=useState([]),[coupons,setCoupons]=useState([]),[staff,setStaff]=useState([]);
+ const [newStaff,setNewStaff]=useState(emptyStaff);
  const [message,setMessage]=useState("Chargement du tableau de bord…"),[busy,setBusy]=useState(false),[coverUrl,setCoverUrl]=useState("");
  const [product,setProduct]=useState(emptyProduct),[zone,setZone]=useState(emptyZone),[courier,setCourier]=useState(emptyCourier);
  const [category,setCategory]=useState(emptyCategory),[editingCategory,setEditingCategory]=useState("");
@@ -30,12 +33,12 @@ function AdminPage(){
  async function load(){
   try{
    const token=await getAccessToken();
-   const [d,l,r,appearance,cats,people,promos]=await Promise.all([
+   const [d,l,r,appearance,cats,people,promos,team]=await Promise.all([
     getAdminDashboard({data:{token}}),getAdminDeliveries({data:{token}}),getAdminReports({data:{token}}),
-    getStorefrontSettings(),adminListCategories({data:{token}}),adminListCustomers({data:{token}}),adminListCoupons({data:{token}}),
+    getStorefrontSettings(),adminListCategories({data:{token}}),adminListCustomers({data:{token}}),adminListCoupons({data:{token}}),adminListStaff({data:{token}}),
    ]);
    setData(d);setDeliveries(l);setReports(r);setCoverUrl(appearance.heroCoverUrl||"");
-   setCategories(cats);setCustomers(people);setCoupons(promos);setMessage("");
+   setCategories(cats);setCustomers(people);setCoupons(promos);setStaff(team);setMessage("");
   }catch(e){setMessage(e.message||"Impossible de charger l'administration.");}
  }
  useEffect(()=>{load();},[]);
@@ -100,6 +103,14 @@ function AdminPage(){
  }
  async function createZone(e){e.preventDefault();const ok=await act(adminCreateDeliveryZone,{...zone,fee:Number(zone.fee),freeFrom:zone.freeFrom?Number(zone.freeFrom):null});if(ok)setZone(emptyZone);}
  async function createCourier(e){e.preventDefault();const ok=await act(adminCreateCourier,courier);if(ok)setCourier(emptyCourier);}
+ async function createStaff(e){
+  e.preventDefault();
+  const ok=await act(adminAddStaff,newStaff,"Membre de l'équipe autorisé.");
+  if(ok)setNewStaff(emptyStaff);
+ }
+ async function updateStaff(person,changes){
+  await act(adminUpdateStaff,{userId:person.user_id,staffRole:changes.staffRole||person.staff_role,isActive:changes.isActive??person.is_active},"Responsabilités de l'employé mises à jour.");
+ }
  async function saveCategory(e){
   e.preventDefault();const ok=await act(adminUpsertCategory,{...category,originalSlug:editingCategory||undefined,sortOrder:Number(category.sortOrder)},"Catégorie enregistrée.");
   if(ok){setCategory(emptyCategory);setEditingCategory("");}
@@ -214,6 +225,32 @@ function AdminPage(){
       <div className="address-actions"><button className="account-submit" disabled={busy}>{editingCoupon?"Mettre à jour":"Créer le coupon"}</button>{editingCoupon&&<button type="button" className="text-button" onClick={()=>{setEditingCoupon("");setCoupon(emptyCoupon);}}>Annuler</button>}</div>
      </form>
      {coupons.map(c=><div className="table-line" key={c.id}><span><strong>{c.code}</strong><small> · {c.discount_type==="percent"?c.discount_value+" %":money.format(Number(c.discount_value))} · {c.redeemed} utilisation(s) · {c.is_active?"Actif":"Archivé"}</small></span><button className="text-button" onClick={()=>{setEditingCoupon(c.id);setCoupon({code:c.code,discountType:c.discount_type,discountValue:String(c.discount_value),minimumOrder:String(c.minimum_order),maxUses:c.max_uses==null?"":String(c.max_uses),startsAt:c.starts_at?new Date(c.starts_at).toISOString().slice(0,16):"",endsAt:c.ends_at?new Date(c.ends_at).toISOString().slice(0,16):"",isActive:c.is_active});}}>Modifier</button><button className="text-button" disabled={!c.is_active||busy} onClick={()=>act(adminArchiveCoupon,{couponId:c.id},"Coupon archivé.")}>Archiver</button></div>)}
+    </section>
+
+    <section className="commerce-panel">
+     <h2>Gestion des employés et responsabilités</h2>
+     <p className="muted-note">La personne doit d'abord créer son compte Lama Market avec son adresse e-mail.</p>
+     <form className="account-form" onSubmit={createStaff}>
+      <div className="form-two">
+       <label>E-mail du compte<input type="email" required value={newStaff.email} onChange={e=>setNewStaff({...newStaff,email:e.target.value})}/></label>
+       <label>Nom affiché<input required value={newStaff.displayName} onChange={e=>setNewStaff({...newStaff,displayName:e.target.value})}/></label>
+      </div>
+      <div className="form-two">
+       <label>Téléphone<input value={newStaff.phone} onChange={e=>setNewStaff({...newStaff,phone:e.target.value})}/></label>
+       <label>Responsabilité<select value={newStaff.staffRole} onChange={e=>setNewStaff({...newStaff,staffRole:e.target.value})}>
+        <option value="manager">Responsable de magasin</option><option value="cashier">Caisse</option><option value="inventory">Inventaire</option><option value="fulfillment">Préparation des commandes</option>
+       </select></label>
+      </div>
+      <button className="account-submit" disabled={busy}>Ajouter à l'équipe</button>
+     </form>
+     {staff.map(person=><div className="table-line" key={person.user_id}>
+      <span><strong>{person.display_name}</strong><small>{person.email} · {person.phone||"Sans téléphone"}</small></span>
+      <select value={person.staff_role} disabled={busy} onChange={e=>updateStaff(person,{staffRole:e.target.value})}>
+       <option value="manager">Responsable de magasin</option><option value="cashier">Caisse</option><option value="inventory">Inventaire</option><option value="fulfillment">Préparation des commandes</option>
+      </select>
+      <button className="text-button" disabled={busy} onClick={()=>updateStaff(person,{isActive:!person.is_active})}>{person.is_active?"Désactiver":"Réactiver"}</button>
+     </div>)}
+     {!staff.length&&<p className="muted-note">Aucun employé autorisé pour le moment.</p>}
     </section>
 
     <section className="commerce-panel">
