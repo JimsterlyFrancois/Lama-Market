@@ -184,11 +184,13 @@ test("P2: login and the professional profile entry are visible and staff access 
   const menu = await read("../src/components/site/AccountMenu.jsx");
   const auth = await read("../src/routes/auth.jsx");
   const serverAuth = await read("../src/lib/auth.server.js");
+  const workspace = await read("../src/routes/espace.jsx");
   assert.match(header,/Connexion/);
   assert.match(menu,/UserRound/);
   assert.match(menu,/Espace professionnel/);
   assert.match(auth,/validé et recevoir un rôle attribué par l’administrateur principal/);
   assert.match(serverAuth,/requireRole/);
+  assert.match(workspace,/administrateur principal doit vérifier votre compte et vous attribuer un rôle/);
  });
 
 test("P2: refunds are auditable and cannot be closed without a transaction reference and private proof", async () => {
