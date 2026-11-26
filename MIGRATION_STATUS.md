@@ -55,3 +55,11 @@ Important : ces fonctions sont des utilitaires. Elles ne créent pas à elles se
 ## Limite de cet audit
 
 L'archive complète annoncée par Base44 n'a pas été fournie dans cette conversation. Les absences listées ci-dessus sont donc des absences confirmées dans les chemins vérifiés du dépôt, et non une preuve que tous les fichiers de l'application ont été recensés.
+
+
+## Vérification P0 — 18 novembre 2026
+
+- Le build Vercel utilise explicitement `npm run build`.
+- Le script `build` exécute d'abord `npm test`, puis `vite build`.
+- Les tests de contrat couvrent le validateur TanStack, l'absence de Base44/Supabase Auth, les ressources de marque et les contrôles d'autorisation Neon.
+- Les variables Neon de la branche de prévisualisation sont isolées de celles de Production.
